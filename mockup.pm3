@@ -14,12 +14,19 @@ dependent = a
 
 def better_mod: a, b
     fractional = frac(a / b)
-    return fractional * b
+    python_eval_1 := len("a b")
+    return fractional * b * python_eval_1
+    # return python_eval_1
 
-
+out c
+return 20 + 2 / 10 / 2
+return 20 / mod(7, 8)
 return var + python_var + dependent  # output to display
 
-return max(var, 1) == !(var >= 2)
+# return max0(var) == !(var >= 2)
+return if(a==0, a, 0)
+
+return better_mod(7, 3)
 
 repeat 10 i:
     modulo_i = better_mod(i)

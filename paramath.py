@@ -3,110 +3,63 @@ import builtins
 from dataclasses import dataclass
 from typing import Union
 
-
 OPERATION_EXPANSIONS = {
     "==": lambda a, b, eps: [
         "/",
-        ["abs", [a, "-", b]],
-        [[["abs", [a, "-", b]], "+", eps]],
+        ["abs", ["-", a, b]],
+        ["+", ["abs", ["-", a, b]], eps],
     ],
-    "=0": lambda a, eps: [
-        "/",
-        ["abs", a],
-        [["abs", a], "+", eps],
-    ],
+    "=0": lambda a, eps: ["/", ["abs", a], ["+", ["abs", a], eps]],
     ">": lambda a, b, eps: [
         "/",
-        [[a, "-", b], "+", ["abs", [a, "-", b]]],
-        [[[2, "*", ["abs", [a, "-", b]]], "+", eps]],
+        ["+", ["-", a, b], ["abs", ["-", a, b]]],
+        ["+", ["*", 2, ["abs", ["-", a, b]]], eps],
     ],
     ">=": lambda a, b, eps: [
         "/",
-        [[[a, "-", b], "+", ["abs", [a, "-", b]]], "-", eps],
-        [[2, "*", ["abs", [a, "-", b]]], "+", eps],
+        ["-", ["+", ["-", a, b], ["abs", ["-", a, b]]], eps],
+        ["+", ["*", 2, ["abs", ["-", a, b]]], eps],
     ],
     "<": lambda a, b, eps: [
         "/",
-        [[b, "-", a], "+", ["abs", [b, "-", a]]],
-        [[2, "*", ["abs", [b, "-", a]]], "+", eps],
+        ["+", ["-", b, a], ["abs", ["-", b, a]]],
+        ["+", ["*", 2, ["abs", ["-", b, a]]], eps],
     ],
     "<=": lambda a, b, eps: [
         "/",
-        [[[b, "-", a], "+", ["abs", [b, "-", a]]], "-", eps],
-        [[2, "*", ["abs", [b, "-", a]]], "+", eps],
+        ["-", ["+", ["-", b, a], ["abs", ["-", b, a]]], eps],
+        ["+", ["*", 2, ["abs", ["-", b, a]]], eps],
     ],
-    "!": lambda a: [1, "-", a],
-    "sign": lambda a, eps: [
-        "/",
-        a,
-        [["abs", a], "+", eps],
-    ],
-    "max": lambda a, b: [
-        "/",
-        [[a, "+", b], "+", ["abs", [a, "-", b]]],
-        2,
-    ],
-    "max0": lambda a: [
-        "/",
-        [a, "+", ["abs", a]],
-        2,
-    ],
-    "min": lambda a, b: [
-        "/",
-        [[a, "+", b], "-", ["abs", [a, "-", b]]],
-        2,
-    ],
-    "min0": lambda a: [
-        "/",
-        [a, "-", ["abs", a]],
-        2,
-    ],
+    "!": lambda a: ["-", 1, a],
+    "sign": lambda a, eps: ["/", a, ["+", ["abs", a], eps]],
+    "max": lambda a, b: ["/", ["+", ["+", a, b], ["abs", ["-", a, b]]], 2],
+    "max0": lambda a: ["/", ["+", a, ["abs", a]], 2],
+    "min": lambda a, b: ["/", ["-", ["+", a, b], ["abs", ["-", a, b]]], 2],
+    "min0": lambda a: ["/", ["-", a, ["abs", a]], 2],
     "if": lambda cond, then_val, else_val: [
-        [then_val, "*", cond],
         "+",
-        [else_val, "*", [1, "-", cond]],
+        ["*", then_val, cond],
+        ["*", else_val, ["-", 1, cond]],
     ],
     "mod": lambda a, b: [
         "/",
-        [b, "*", ["arctan", ["tan", [["pi", "*", a], "/", b]]]],
+        ["*", b, ["arctan", ["tan", ["/", ["*", "pi", a], b]]]],
         "pi",
     ],
-    "frac": lambda a: [
-        "/",
-        ["arctan", ["tan", ["pi", "*", a]]],
-        "pi",
-    ],
+    "frac": lambda a: ["/", ["arctan", ["tan", ["*", "pi", a]]], "pi"],
     "floor": lambda a: [
-        [a, "-", 0.5],
         "-",
-        ["/", ["arctan", ["tan", [["pi", "*", a], "+", [0.5, "*", "pi"]]]], "pi"],
+        ["-", a, 0.5],
+        ["/", ["arctan", ["tan", ["+", ["*", "pi", a], ["*", 0.5, "pi"]]]], "pi"],
     ],
     "ceil": lambda a: [
-        [a, "+", 0.5],
         "+",
-        ["/", ["arctan", ["tan", [["pi", "*", a], "+", [0.5, "*", "pi"]]]], "pi"],
+        ["+", a, 0.5],
+        ["/", ["arctan", ["tan", ["+", ["*", "pi", a], ["*", 0.5, "pi"]]]], "pi"],
     ],
-    "round": lambda a: [
-        a,
-        "-",
-        ["/", ["arctan", ["tan", ["pi", "*", a]]], "pi"],
-    ],
+    "round": lambda a: ["-", a, ["/", ["arctan", ["tan", ["*", "pi", a]]], "pi"]],
 }
-INFIX_OPERATIONS = {
-    "==",
-    "=0",
-    "!",
-    ">",
-    "<",
-    ">=",
-    "<=",
-    "+",
-    "-",
-    "*",
-    "/",
-    "**",
-    "mod",
-}
+INFIX_OPERATIONS = {"==", "!", ">", "<", ">=", "<=", "+", "-", "*", "/", "**"}
 
 math_funcs = {
     "sin": math.sin,
@@ -161,12 +114,29 @@ class FunctionDef:
     name: str
     params: list
     body: list
-    config: ProgramConfig
+
+
+@dataclass
+class RepeatLoop:
+    itr_var: str
+    times: Union[int, str]
+    body: list
+
+
+def is_constant(expr):
+    if isinstance(expr, list):
+        return all(is_constant(subexpr) for subexpr in expr[1:])
+    else:
+        try:
+            num(expr)
+            return True
+        except ValueError:
+            return False
 
 
 def tokenize(line):
     special_tokens = {"    ": "TAB", "\t": "TAB"}
-    multi_char_ops = [key for key in OPERATION_EXPANSIONS.keys() if len(key) > 1]
+    multi_char_ops = [key for key in INFIX_OPERATIONS if len(key) > 1]
     multi_char_ops += [":=", "//", "**"]
 
     for token, replacement in special_tokens.items():
@@ -184,7 +154,7 @@ def tokenize(line):
     while "  " in line:
         line = line.replace("  ", " ")
 
-    return line.lstrip().split(" ")
+    return line.strip().split(" ")
 
 
 def generate_ast(tokens):
@@ -233,17 +203,31 @@ def generate_ast(tokens):
 def infix_to_postfix(ast):
     if isinstance(ast, list):
         if len(ast) > 1 and isinstance(ast[1], str) and ast[1] in INFIX_OPERATIONS:
-            op = ast[1]
-            left = infix_to_postfix(ast[0])
-            right = infix_to_postfix(ast[2])
-            return [op, left, right]
+            result = infix_to_postfix(ast[0])
+            i = 1
+            while i < len(ast):
+                if (
+                    i < len(ast)
+                    and isinstance(ast[i], str)
+                    and ast[i] in INFIX_OPERATIONS
+                ):
+                    op = ast[i]
+                    if i + 1 < len(ast):
+                        right = infix_to_postfix(ast[i + 1])
+                        result = [op, result, right]
+                        i += 2
+                    else:
+                        break
+                else:
+                    i += 1
+            return result
         else:
             return [infix_to_postfix(elem) for elem in ast]
     else:
         return ast
 
 
-def expand_expression(ast, eps):
+def expand_expression(ast):
     if isinstance(ast, list):
         if not ast:
             return ast
@@ -251,13 +235,34 @@ def expand_expression(ast, eps):
             expansion_func = OPERATION_EXPANSIONS[ast[0]]
             args = expansion_func.__code__.co_varnames
 
-            expanded_args = [expand_expression(arg, eps) for arg in ast[1:]]
+            expanded_args = [expand_expression(arg) for arg in ast[1:]]
             if "eps" in args:
-                return expansion_func(*expanded_args, eps)
+                return expansion_func(*expanded_args, "epsilon")
             else:
                 return expansion_func(*expanded_args)
         else:
-            return [expand_expression(elem, eps) for elem in ast]
+            return [expand_expression(elem) for elem in ast]
+    else:
+        return ast
+
+
+def expand_functions(ast, functions):
+    if isinstance(ast, list):
+        if not ast:
+            return ast
+        if not isinstance(ast[0], list):
+            func_names = [func.name for func in functions]
+            if ast[0] in func_names:
+                func_def = next(func for func in functions if func.name == ast[0])
+                if len(ast[1:]) != len(func_def.params):
+                    raise ValueError(
+                        f"Function {func_def.name} expects {len(func_def.params)} arguments, got {len(ast[1:])}"
+                    )
+                return expand_functions(func_def.body, functions)
+            else:
+                return [expand_functions(elem, functions) for elem in ast]
+        else:
+            return [expand_functions(elem, functions) for elem in ast]
     else:
         return ast
 
@@ -289,6 +294,41 @@ def substitute_vars(tokens, subst_vars):
     return tokens
 
 
+def parse_expression(tokens, subst_vars, functions):
+    result = substitute_vars(tokens, subst_vars)
+    ast = generate_ast(result)
+    ast = infix_to_postfix(ast)
+    expr = expand_expression(ast)
+    expr = expand_functions(expr, functions)
+    return expr
+
+
+def parse_function(func_tokens, lines, variables, functions):
+    local_scope = variables.copy()
+    for line_no, tokens in enumerate(func_tokens):
+        if tokens[1] == "=":
+            local_scope[tokens[0]] = parse_expression(
+                tokens[2:], local_scope, functions
+            )
+        elif tokens[1] == ":=":
+            var_name = tokens[0]
+            expr = lines[line_no].split(":=", 1)[1].strip()
+            eval_namespace = {
+                "__builtins__": builtins.__dict__,
+                "vars": EvalVars(local_scope),
+                **math_funcs,
+            }
+            result = eval(expr, eval_namespace)
+            local_scope[var_name] = [str(result)]
+
+        elif tokens[0] == "return":
+            expr_tokens = tokens[1:]
+            return parse_expression(expr_tokens, local_scope, functions)
+
+        else:
+            raise SyntaxError(f"Unknown statement in function: {' '.join(tokens)}")
+
+
 def parse_pm3(code):
     config = ProgramConfig()
     subst_vars = {}
@@ -309,9 +349,13 @@ def parse_pm3(code):
         if collecting_function:
             if not tokens[0] == "__TAB__":
                 collecting_function = False
+                current_function.body = parse_function(
+                    function_tokens, function_body, subst_vars, funcs
+                )
                 funcs.append(current_function)
             else:
-                current_function.body.append(tokens[1:])
+                function_body.append(line[4:])
+                function_tokens.append(tokens[1:])
                 continue
 
         if collecting_loop:
@@ -332,17 +376,19 @@ def parse_pm3(code):
                         f"Function definitions inside loops are not supported at line {line_num + 1}"
                     )
                 collecting_function = True
-                name = tokens[1][:-1]
+                function_body = []
+                function_tokens = []
+                function_name = tokens[1][:-1]
                 params = [
                     param.strip() for param in line[3:].strip().split(":")[1].split(",")
                 ]
                 current_function = FunctionDef(
-                    name=name, params=params, body=[], config=config
+                    name=function_name, params=params, body=[]
                 )
-
             elif tokens[0] == "repeat":
                 collecting_loop = True
-                # tbd
+                repeat_body = []
+                repeat_tokens = []
 
             elif tokens[0] == "out":
                 output = tokens[1]
@@ -355,12 +401,8 @@ def parse_pm3(code):
 
             elif tokens[0] == "return":
                 expr_tokens = tokens[1:]
-
-                result = substitute_vars(expr_tokens, subst_vars)
-                ast = generate_ast(result)
-                ast = infix_to_postfix(ast)
-                expr = expand_expression(ast, eps=config.epsilon)
-                print(expr)
+                expr = parse_expression(expr_tokens, subst_vars, funcs)
+                print(expr, is_constant(expr))
                 config.output = None
 
             elif tokens[0] == "//":
