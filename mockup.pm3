@@ -1,0 +1,27 @@
+//precision 3
+//epsilon 1e-99
+//variables a b c d e f x y z m
+
+//dupe false
+//simplify true
+//sympy false
+
+global python_var := len("rawr")
+global var = 69
+
+def better_mod: a, b
+    fractional = frac(a / b)
+    return fractional * b
+
+
+return var + python_var  # output to display
+
+repeat 10 i:
+    modulo_i = better_mod(i)
+
+    # note that both if and else are required to have a return, per language limitation
+    
+    out c  # output to c
+    # cond, if, else
+    return if(modulo_i != 0, modulo_i, 0)
+
