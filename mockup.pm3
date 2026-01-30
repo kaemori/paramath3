@@ -2,19 +2,24 @@
 //epsilon 1e-99
 //variables a b c d e f x y z m
 
+# test line with no content
+
 //dupe false
 //simplify true
 //sympy false
 
-global python_var := len("rawr")
-global var = 69
+python_var := len("rawr")
+var = 69 + 1
+dependent = a
 
 def better_mod: a, b
     fractional = frac(a / b)
     return fractional * b
 
 
-return var + python_var  # output to display
+return var + python_var + dependent  # output to display
+
+return max(var, 1) == !(var >= 2)
 
 repeat 10 i:
     modulo_i = better_mod(i)
