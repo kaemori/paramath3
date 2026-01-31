@@ -9,6 +9,7 @@ OPERATION_EXPANSIONS = {
         ["abs", ["-", a, b]],
         ["+", ["abs", ["-", a, b]], eps],
     ],
+    "!=": lambda a, b, eps: ["-", 1, ["==", a, b]],
     "=0": lambda a, eps: ["/", ["abs", a], ["+", ["abs", a], eps]],
     ">": lambda a, b, eps: [
         "/",
@@ -59,7 +60,8 @@ OPERATION_EXPANSIONS = {
     ],
     "round": lambda a: ["-", a, ["/", ["arctan", ["tan", ["*", "pi", a]]], "pi"]],
 }
-INFIX_OPERATIONS = {"==", "!", ">", "<", ">=", "<=", "+", "-", "*", "/", "**"}
+INFIX_OPERATIONS = {"==", "!=", ">", "<", ">=", "<=", "+", "-", "*", "/", "**"}
+
 
 math_funcs = {
     "sin": math.sin,
@@ -145,7 +147,7 @@ def tokenize(line):
     for i, op in enumerate(multi_char_ops):
         line = line.replace(op, f" __MULTIOP_{i}__ ")
 
-    splitters = ["(", ")", ",", "+", "-", "*", "/", "=", "\n"]
+    splitters = ["(", ")", ",", "+", "-", "*", "/", "=", "!", "\n"]
     for splitter in splitters:
         line = line.replace(splitter, f" {splitter} ")
     for i, op in enumerate(multi_char_ops):
@@ -201,30 +203,94 @@ def generate_ast(tokens):
 
 
 def infix_to_postfix(ast):
-    if isinstance(ast, list):
-        if len(ast) > 1 and isinstance(ast[1], str) and ast[1] in INFIX_OPERATIONS:
-            result = infix_to_postfix(ast[0])
-            i = 1
-            while i < len(ast):
-                if (
-                    i < len(ast)
-                    and isinstance(ast[i], str)
-                    and ast[i] in INFIX_OPERATIONS
-                ):
-                    op = ast[i]
-                    if i + 1 < len(ast):
-                        right = infix_to_postfix(ast[i + 1])
-                        result = [op, result, right]
-                        i += 2
-                    else:
+    precedence = {
+        "==": 0,
+        "!=": 0,
+        ">": 0,
+        "<": 0,
+        ">=": 0,
+        "<=": 0,
+        "+": 1,
+        "-": 1,
+        "*": 2,
+        "/": 2,
+        "**": 3,
+    }
+    right_assoc = {"**"}
+
+    def is_op(token):
+        return isinstance(token, str) and token in INFIX_OPERATIONS
+
+    def convert(node):
+        if not isinstance(node, list):
+            return node
+
+        if not node:
+            return node
+
+        if len(node) > 1 and isinstance(node[1], str) and node[1] in INFIX_OPERATIONS:
+            items = node
+
+            i = 0
+
+            def peek():
+                return items[i] if i < len(items) else None
+
+            def consume():
+                nonlocal i
+                tok = items[i]
+                i += 1
+                return tok
+
+            def parse_atom():
+                tok = peek()
+                if tok in ("+", "-"):
+                    op = consume()
+                    rhs = parse_atom()
+                    if op == "+":
+                        return rhs
+                    return ["-", 0, rhs]
+                if tok == "!":
+                    consume()
+                    rhs = parse_atom()
+                    return ["!", rhs]
+
+                tok = consume()
+                if isinstance(tok, list):
+                    return convert(tok)
+                return tok
+
+            def parse_expr(min_prec=0):
+                left = parse_atom()
+                while True:
+                    op = peek()
+                    if not is_op(op) or op not in precedence:
                         break
-                else:
-                    i += 1
+                    prec = precedence[op]
+                    if prec < min_prec:
+                        break
+
+                    consume()
+                    next_min = prec if op in right_assoc else prec + 1
+                    right = parse_expr(next_min)
+                    left = [op, left, right]
+
+                return left
+
+            result = parse_expr(0)
+            if i != len(items):
+                leftover = " ".join(str(x) for x in items[i:])
+                raise SyntaxError(
+                    f"Could not fully parse expression, leftover tokens: {leftover}"
+                )
             return result
-        else:
-            return [infix_to_postfix(elem) for elem in ast]
-    else:
-        return ast
+
+        if isinstance(node[0], str):
+            return [node[0]] + [convert(arg) for arg in node[1:]]
+
+        return [convert(elem) for elem in node]
+
+    return convert(ast)
 
 
 def expand_expression(ast):
@@ -248,21 +314,22 @@ def expand_expression(ast):
 
 def expand_functions(ast, functions):
     if isinstance(ast, list):
-        if not ast:
-            return ast
         if not isinstance(ast[0], list):
-            func_names = [func.name for func in functions]
-            if ast[0] in func_names:
-                func_def = next(func for func in functions if func.name == ast[0])
-                if len(ast[1:]) != len(func_def.params):
-                    raise ValueError(
-                        f"Function {func_def.name} expects {len(func_def.params)} arguments, got {len(ast[1:])}"
+            for func in functions:
+                if ast[0] == func.name:
+                    if len(ast[1:]) != len(func.params):
+                        raise ValueError(
+                            f"Function {func.name} expects {len(func.params)} arguments, got {len(ast[1:])}"
+                        )
+                    expanded_args = [
+                        expand_functions(arg, functions) for arg in ast[1:]
+                    ]
+                    substituted = substitute_vars(
+                        func.body, dict(zip(func.params, expanded_args))
                     )
-                return expand_functions(func_def.body, functions)
-            else:
-                return [expand_functions(elem, functions) for elem in ast]
-        else:
-            return [expand_functions(elem, functions) for elem in ast]
+                    return expand_functions(substituted, functions)
+
+        return [expand_functions(elem, functions) for elem in ast]
     else:
         return ast
 
@@ -286,12 +353,12 @@ def parse_pragma(line: str, config: ProgramConfig):
 
 
 def substitute_vars(tokens, subst_vars):
-    for i in range(len(tokens)):
-        if isinstance(tokens[i], list):
-            substitute_vars(tokens[i], subst_vars)
-        elif tokens[i] in subst_vars:
-            tokens[i] = subst_vars[tokens[i]]
-    return tokens
+    if isinstance(tokens, list):
+        return [substitute_vars(token, subst_vars) for token in tokens]
+    elif tokens in subst_vars:
+        return subst_vars[tokens]
+    else:
+        return tokens
 
 
 def parse_expression(tokens, subst_vars, functions):
@@ -303,8 +370,8 @@ def parse_expression(tokens, subst_vars, functions):
     return expr
 
 
-def parse_function(func_tokens, lines, variables, functions):
-    local_scope = variables.copy()
+def parse_function(func_tokens, lines, subst_vars, functions):
+    local_scope = subst_vars.copy()
     for line_no, tokens in enumerate(func_tokens):
         if tokens[1] == "=":
             local_scope[tokens[0]] = parse_expression(
@@ -329,6 +396,123 @@ def parse_function(func_tokens, lines, variables, functions):
             raise SyntaxError(f"Unknown statement in function: {' '.join(tokens)}")
 
 
+def parse_repeat(
+    body_tokens,
+    lines,
+    times,
+    repeat_var,
+    subst_vars,
+    variables,
+    functions,
+    *,
+    outer_bindings=None,
+):
+    if outer_bindings is None:
+        outer_bindings = {}
+
+    variables = variables or []
+
+    if repeat_var is not None and (
+        repeat_var in variables
+        or repeat_var in subst_vars.keys()
+        or repeat_var in outer_bindings
+    ):
+        raise ValueError(
+            f"Iteration variable {repeat_var!r} conflicts with declared variables"
+        )
+
+    def dedent_once(token_list):
+        if token_list and token_list[0] == "__TAB__":
+            return token_list[1:]
+        return token_list
+
+    def strip_all_tabs(token_list):
+        while token_list and token_list[0] == "__TAB__":
+            token_list = token_list[1:]
+        return token_list
+
+    results = []
+    for itr in range(num(times)):
+        itr_bindings = (
+            outer_bindings
+            if repeat_var is None
+            else outer_bindings | {repeat_var: str(itr)}
+        )
+
+        line_no = 0
+        while line_no < len(body_tokens):
+            tokens = strip_all_tabs(body_tokens[line_no])
+            if not tokens:
+                line_no += 1
+                continue
+
+            if len(tokens) > 1 and tokens[1] == "=":
+                subst_vars[tokens[0]] = parse_expression(
+                    tokens[2:], subst_vars | itr_bindings, functions
+                )
+                line_no += 1
+                continue
+
+            if len(tokens) > 1 and tokens[1] == ":=":
+                var_name = tokens[0]
+                expr = lines[line_no].split(":=", 1)[1].strip()
+                eval_namespace = {
+                    "__builtins__": builtins.__dict__,
+                    "vars": EvalVars(subst_vars | itr_bindings),
+                    **math_funcs,
+                }
+                result = eval(expr, eval_namespace)
+                subst_vars[var_name] = [str(result)]
+                line_no += 1
+                continue
+
+            if tokens[0] == "repeat":
+                if len(tokens) < 2:
+                    raise SyntaxError("repeat requires at least a repetition count")
+
+                nested_times = tokens[1]
+                nested_repeat_var = tokens[2] if len(tokens) >= 3 else None
+
+                nested_body_tokens = []
+                nested_body_lines = []
+                next_line_no = line_no + 1
+
+                while next_line_no < len(body_tokens) and lines[
+                    next_line_no
+                ].startswith("    "):
+                    nested_body_lines.append(lines[next_line_no][4:])
+                    nested_body_tokens.append(dedent_once(body_tokens[next_line_no]))
+                    next_line_no += 1
+
+                results.extend(
+                    parse_repeat(
+                        nested_body_tokens,
+                        nested_body_lines,
+                        nested_times,
+                        nested_repeat_var,
+                        subst_vars,
+                        variables,
+                        functions,
+                        outer_bindings=itr_bindings,
+                    )
+                )
+
+                line_no = next_line_no
+                continue
+
+            if tokens[0] == "return":
+                expr_tokens = tokens[1:]
+                results.append(
+                    parse_expression(expr_tokens, subst_vars | itr_bindings, functions)
+                )
+                line_no += 1
+                continue
+
+            raise SyntaxError(f"Unknown statement in repeat: {' '.join(tokens)}")
+
+    return results
+
+
 def parse_pm3(code):
     config = ProgramConfig()
     subst_vars = {}
@@ -337,7 +521,7 @@ def parse_pm3(code):
     collecting_loop = False
 
     funcs = []
-
+    compiled = []
     for line_num, line in enumerate(code):
         line = line.split("#", 1)[0].rstrip()
         if not line:
@@ -361,10 +545,21 @@ def parse_pm3(code):
         if collecting_loop:
             if not tokens[0] == "__TAB__":
                 collecting_loop = False
+                repeat_result = parse_repeat(
+                    repeat_tokens,
+                    repeat_body,
+                    repeat_times,
+                    repeat_var,
+                    subst_vars,
+                    config.variables,
+                    funcs,
+                )
+                compiled.extend(repeat_result)
             else:
-                continue  # tbi
+                repeat_body.append(line[4:])
+                repeat_tokens.append(tokens[1:])
 
-        if not collecting_function or not collecting_loop:
+        if not collecting_function and not collecting_loop:
             if tokens[0] == "__TAB__":
                 raise ValueError(
                     f"Unexpected indentation outside function or loop at line {line_num + 1}"
@@ -378,10 +573,8 @@ def parse_pm3(code):
                 collecting_function = True
                 function_body = []
                 function_tokens = []
-                function_name = tokens[1][:-1]
-                params = [
-                    param.strip() for param in line[3:].strip().split(":")[1].split(",")
-                ]
+                function_name = tokens[1]
+                params = tokens[2:]
                 current_function = FunctionDef(
                     name=function_name, params=params, body=[]
                 )
@@ -389,6 +582,8 @@ def parse_pm3(code):
                 collecting_loop = True
                 repeat_body = []
                 repeat_tokens = []
+                repeat_times = tokens[1]
+                repeat_var = tokens[2] if len(tokens) >= 3 else None
 
             elif tokens[0] == "out":
                 output = tokens[1]
@@ -402,7 +597,7 @@ def parse_pm3(code):
             elif tokens[0] == "return":
                 expr_tokens = tokens[1:]
                 expr = parse_expression(expr_tokens, subst_vars, funcs)
-                print(expr, is_constant(expr))
+                compiled.append(expr)
                 config.output = None
 
             elif tokens[0] == "//":
@@ -429,9 +624,30 @@ def parse_pm3(code):
                     result = eval(expr, eval_namespace)
                     subst_vars[var_name] = [str(result)]
 
+    if collecting_function:
+        current_function.body = parse_function(
+            function_tokens, function_body, subst_vars, funcs
+        )
+        funcs.append(current_function)
+
+    if collecting_loop:
+        repeat_result = parse_repeat(
+            repeat_tokens,
+            repeat_body,
+            repeat_times,
+            repeat_var,
+            subst_vars,
+            config.variables,
+            funcs,
+        )
+        compiled.extend(repeat_result)
+
     # print(config)
     # print(subst_vars)
     # print(funcs)
+
+    for item in compiled:
+        print(item)
 
 
 if __name__ == "__main__":

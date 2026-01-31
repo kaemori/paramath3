@@ -12,28 +12,31 @@ python_var := len("rawr")
 var = 69 + 1
 dependent = a
 
-def better_mod: a, b
-    fractional = frac(a / b)
+def better_mod divend divdor
+    fractional = frac(divend / divdor)
     python_eval_1 := len("a b")
-    return fractional * b * python_eval_1
-    # return python_eval_1
+    return fractional * divdor * python_eval_1
+    # return var
 
 out c
 return 20 + 2 / 10 / 2
 return 20 / mod(7, 8)
 return var + python_var + dependent  # output to display
 
-# return max0(var) == !(var >= 2)
+return max0(var) == !(var >= 2)
 return if(a==0, a, 0)
 
 return better_mod(7, 3)
 
-repeat 10 i:
-    modulo_i = better_mod(i)
+def square a
+    return a ** 2
 
-    # note that both if and else are required to have a return, per language limitation
+repeat 2 i
+    hi = 2
+
+    repeat 2 k
+        repeat 3 l
+            return square(l)
     
-    out c  # output to c
-    # cond, if, else
-    return if(modulo_i != 0, modulo_i, 0)
-
+    repeat 2
+        return 0
