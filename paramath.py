@@ -1,6 +1,7 @@
 import math
+import json
 import builtins
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Union
 
 OPERATION_EXPANSIONS = {
@@ -75,7 +76,7 @@ math_funcs = {
     "arctan": math.atan,
     "abs": abs,
     "pi": math.pi,
-    "e": math.e,
+    "euler": math.e,
 }
 
 
@@ -97,7 +98,8 @@ class EvalVars:
 @dataclass
 class Output:
     output: str = None
-    var: str | None = None
+    ast: Union[list, float, int] = None
+    config: "ProgramConfig" = None
 
 
 @dataclass
@@ -106,9 +108,14 @@ class ProgramConfig:
     epsilon: float = None
     variables: list = None
     dupe: bool = None
+    dupe_min_savings: int = 0
     simplify: bool = None
     sympy: bool = None
     output: str = None
+
+    def __post_init__(self):
+        if self.variables is None:
+            self.variables = list("abcdefxyzm")
 
 
 @dataclass
@@ -119,21 +126,32 @@ class FunctionDef:
 
 
 @dataclass
-class RepeatLoop:
-    itr_var: str
-    times: Union[int, str]
-    body: list
+class AstOutput:
+    output: str = None
+    ast: Union[list, float, int] = None
 
 
 def is_constant(expr):
     if isinstance(expr, list):
         return all(is_constant(subexpr) for subexpr in expr[1:])
     else:
+        if expr in ("epsilon", "pi", "euler"):
+            return True
         try:
             num(expr)
             return True
         except ValueError:
             return False
+
+
+def fix_structure(ast):
+    if isinstance(ast, list):
+        if len(ast) == 1:
+            return fix_structure(ast[0])
+        else:
+            return [fix_structure(elem) for elem in ast]
+    else:
+        return ast
 
 
 def tokenize(line):
@@ -337,19 +355,46 @@ def expand_functions(ast, functions):
 def parse_pragma(line: str, config: ProgramConfig):
     pragma, value = line.split(" ", 1)
     if pragma == "precision":
+        if not value.isdigit():
+            raise ValueError(f"Precision must be an integer, got {value!r}")
         config.precision = int(value)
     elif pragma == "epsilon":
+        try:
+            float(value)
+        except ValueError:
+            raise ValueError(f"Epsilon must be a float, got {value!r}") from None
         config.epsilon = float(value)
     elif pragma == "variables":
         config.variables = [var.strip() for var in value.split(" ")]
     elif pragma == "dupe":
-        config.dupe = value.lower() == "true"
+        parts = value.strip().split()
+        if not parts:
+            raise ValueError("dupe requires true/false")
+        config.dupe = parts[0].lower() == "true"
+        if len(parts) >= 2:
+            try:
+                config.dupe_min_savings = int(parts[1])
+            except ValueError:
+                raise ValueError("dupe min_savings must be an integer") from None
     elif pragma == "simplify":
         config.simplify = value.lower() == "true"
     elif pragma == "sympy":
         config.sympy = value.lower() == "true"
     else:
         raise ValueError(f"Unknown pragma: {pragma}")
+
+
+def _raise_if_conflicts_with_declared_variables(
+    name: str,
+    declared_variables: list | None,
+    *,
+    kind: str,
+):
+    declared_variables = declared_variables or []
+    if name in declared_variables:
+        raise ValueError(
+            f"{kind} {name!r} conflicts with a name declared in //variables"
+        )
 
 
 def substitute_vars(tokens, subst_vars):
@@ -370,15 +415,21 @@ def parse_expression(tokens, subst_vars, functions):
     return expr
 
 
-def parse_function(func_tokens, lines, subst_vars, functions):
+def parse_function(func_tokens, lines, subst_vars, functions, declared_variables=None):
     local_scope = subst_vars.copy()
     for line_no, tokens in enumerate(func_tokens):
         if tokens[1] == "=":
+            _raise_if_conflicts_with_declared_variables(
+                tokens[0], declared_variables, kind="Substitution variable"
+            )
             local_scope[tokens[0]] = parse_expression(
                 tokens[2:], local_scope, functions
             )
         elif tokens[1] == ":=":
             var_name = tokens[0]
+            _raise_if_conflicts_with_declared_variables(
+                var_name, declared_variables, kind="Substitution variable"
+            )
             expr = lines[line_no].split(":=", 1)[1].strip()
             eval_namespace = {
                 "__builtins__": builtins.__dict__,
@@ -404,22 +455,27 @@ def parse_repeat(
     subst_vars,
     variables,
     functions,
+    config,
     *,
     outer_bindings=None,
+    output_state=None,
 ):
     if outer_bindings is None:
         outer_bindings = {}
 
+    if output_state is None:
+        output_state = {"output": None}
+
     variables = variables or []
 
-    if repeat_var is not None and (
-        repeat_var in variables
-        or repeat_var in subst_vars.keys()
-        or repeat_var in outer_bindings
-    ):
-        raise ValueError(
-            f"Iteration variable {repeat_var!r} conflicts with declared variables"
+    if repeat_var is not None:
+        _raise_if_conflicts_with_declared_variables(
+            repeat_var, variables, kind="Iteration variable"
         )
+        if repeat_var in subst_vars.keys() or repeat_var in outer_bindings:
+            raise ValueError(
+                f"Iteration variable {repeat_var!r} conflicts with an existing substitution or loop binding"
+            )
 
     def dedent_once(token_list):
         if token_list and token_list[0] == "__TAB__":
@@ -447,6 +503,9 @@ def parse_repeat(
                 continue
 
             if len(tokens) > 1 and tokens[1] == "=":
+                _raise_if_conflicts_with_declared_variables(
+                    tokens[0], variables, kind="Substitution variable"
+                )
                 subst_vars[tokens[0]] = parse_expression(
                     tokens[2:], subst_vars | itr_bindings, functions
                 )
@@ -455,6 +514,9 @@ def parse_repeat(
 
             if len(tokens) > 1 and tokens[1] == ":=":
                 var_name = tokens[0]
+                _raise_if_conflicts_with_declared_variables(
+                    var_name, variables, kind="Substitution variable"
+                )
                 expr = lines[line_no].split(":=", 1)[1].strip()
                 eval_namespace = {
                     "__builtins__": builtins.__dict__,
@@ -493,18 +555,42 @@ def parse_repeat(
                         subst_vars,
                         variables,
                         functions,
+                        config,
                         outer_bindings=itr_bindings,
+                        output_state=output_state,
                     )
                 )
 
                 line_no = next_line_no
                 continue
 
+            if tokens[0] == "out":
+                if len(tokens) < 2:
+                    raise SyntaxError("out requires a variable name")
+                output_var = tokens[1]
+                if output_var in variables:
+                    output_state["output"] = output_var
+                else:
+                    raise ValueError(
+                        f"Output variable {output_var!r} not declared in variables"
+                    )
+                line_no += 1
+                continue
+
             if tokens[0] == "return":
                 expr_tokens = tokens[1:]
-                results.append(
-                    parse_expression(expr_tokens, subst_vars | itr_bindings, functions)
+                expr = parse_expression(
+                    expr_tokens, subst_vars | itr_bindings, functions
                 )
+                expr = fix_structure(expr)
+                results.append(
+                    Output(
+                        output=output_state["output"],
+                        ast=expr,
+                        config=replace(config, output=output_state["output"]),
+                    )
+                )
+                output_state["output"] = None
                 line_no += 1
                 continue
 
@@ -513,9 +599,11 @@ def parse_repeat(
     return results
 
 
-def parse_pm3(code):
+def parse_pm3_to_ast(code):
     config = ProgramConfig()
     subst_vars = {}
+
+    output_state = {"output": None}
 
     collecting_function = False
     collecting_loop = False
@@ -534,7 +622,11 @@ def parse_pm3(code):
             if not tokens[0] == "__TAB__":
                 collecting_function = False
                 current_function.body = parse_function(
-                    function_tokens, function_body, subst_vars, funcs
+                    function_tokens,
+                    function_body,
+                    subst_vars,
+                    funcs,
+                    config.variables,
                 )
                 funcs.append(current_function)
             else:
@@ -553,8 +645,11 @@ def parse_pm3(code):
                     subst_vars,
                     config.variables,
                     funcs,
+                    config,
+                    output_state=output_state,
                 )
                 compiled.extend(repeat_result)
+                config.output = output_state["output"]
             else:
                 repeat_body.append(line[4:])
                 repeat_tokens.append(tokens[1:])
@@ -589,16 +684,33 @@ def parse_pm3(code):
                 output = tokens[1]
                 if output in config.variables:
                     config.output = output
+                    output_state["output"] = output
                 else:
                     raise ValueError(
                         f"Output variable {output!r} not declared in variables at line {line_num + 1}"
                     )
 
             elif tokens[0] == "return":
+                if config.precision is None:
+                    raise ValueError(
+                        f"Precision must be set before return statement at line {line_num + 1}"
+                    )
+                if config.epsilon is None:
+                    raise ValueError(
+                        f"Epsilon must be set before return statement at line {line_num + 1}"
+                    )
                 expr_tokens = tokens[1:]
                 expr = parse_expression(expr_tokens, subst_vars, funcs)
-                compiled.append(expr)
+                expr = fix_structure(expr)
+                compiled.append(
+                    Output(
+                        output=output_state["output"],
+                        ast=expr,
+                        config=replace(config, output=output_state["output"]),
+                    )
+                )
                 config.output = None
+                output_state["output"] = None
 
             elif tokens[0] == "//":
                 if not collecting_function and not collecting_loop:
@@ -611,10 +723,16 @@ def parse_pm3(code):
             else:
                 # non-function, non-pragma line
                 if tokens[1] == "=":
+                    _raise_if_conflicts_with_declared_variables(
+                        tokens[0], config.variables, kind="Substitution variable"
+                    )
                     subst_vars[tokens[0]] = tokens[2:]
                 if tokens[1] == ":=":
                     # python eval!
                     var_name = tokens[0]
+                    _raise_if_conflicts_with_declared_variables(
+                        var_name, config.variables, kind="Substitution variable"
+                    )
                     expr = line.split(":=")[1].strip()
                     eval_namespace = {
                         "__builtins__": builtins.__dict__,
@@ -626,7 +744,11 @@ def parse_pm3(code):
 
     if collecting_function:
         current_function.body = parse_function(
-            function_tokens, function_body, subst_vars, funcs
+            function_tokens,
+            function_body,
+            subst_vars,
+            funcs,
+            config.variables,
         )
         funcs.append(current_function)
 
@@ -639,18 +761,130 @@ def parse_pm3(code):
             subst_vars,
             config.variables,
             funcs,
+            config,
+            output_state=output_state,
         )
         compiled.extend(repeat_result)
+        config.output = output_state["output"]
 
     # print(config)
     # print(subst_vars)
     # print(funcs)
 
-    for item in compiled:
-        print(item)
+    output = []
+    for i, item in enumerate(compiled):
+        output.append(fix_structure(item))
+
+    return compiled, config
+
+
+def generate_expression(ast):
+    if isinstance(ast, list):
+        if not ast:
+            return ""
+        if isinstance(ast[0], str):
+            func_name = ast[0]
+            if func_name in INFIX_OPERATIONS and len(ast) == 3:
+                left = generate_expression(ast[1])
+                right = generate_expression(ast[2])
+                return f"({left} {func_name} {right})"
+            args = [generate_expression(arg) for arg in ast[1:]]
+            return f"{func_name}({', '.join(args)})"
+        else:
+            return "(" + " ".join(generate_expression(elem) for elem in ast) + ")"
+    else:
+        return str(ast)
+
+
+def simplify_literals_ast(ast, config):
+    if isinstance(ast, list):
+        simplified = [simplify_literals_ast(elem, config) for elem in ast]
+        if is_constant(simplified):
+            expr_str = generate_expression(simplified)
+            eval_namespace = {
+                "__builtins__": builtins.__dict__,
+                **math_funcs,
+                "epsilon": config.epsilon,
+            }
+            result = eval(expr_str, eval_namespace)
+            if config.precision is not None and isinstance(result, float):
+                result = round(result, config.precision)
+            return result
+        else:
+            return simplified
+    else:
+        return ast
+
+
+def all_sublists(expr):
+    if isinstance(expr, list):
+        yield expr
+        for item in expr:
+            yield from all_sublists(item)
+
+
+def replace_in_ast(ast, pattern, replacement: str):
+    if ast == pattern:
+        return replacement
+    if isinstance(ast, list):
+        return [replace_in_ast(x, pattern, replacement) for x in ast]
+    return ast
+
+
+def expr_length(ast) -> int:
+    return len(generate_expression(ast).replace(" ", ""))
+
+
+def find_beneficial_duplicates(ast, min_length: int = 4, min_savings: int = -999):
+    seen = {}
+
+    if not isinstance(ast, list):
+        return []
+
+    for sub in all_sublists(ast):
+        key = json.dumps(sub, sort_keys=False, default=str)
+        seen.setdefault(key, {"count": 0, "obj": sub})
+        seen[key]["count"] += 1
+
+    beneficial_dupes = []
+    for data in seen.values():
+        if data["count"] > 1:
+            dupe_length = expr_length(data["obj"])
+            if dupe_length >= min_length:
+                total_size = data["count"] * dupe_length
+                savings = total_size - (dupe_length + 3 + (data["count"] - 1) * 3)
+                if savings > min_savings:
+                    beneficial_dupes.append((savings, total_size, data["obj"]))
+
+    beneficial_dupes.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return beneficial_dupes
+
+
+def extract_subexpressions(ast, min_savings):
+    current_ast = ast
+    beneficial_dupes = find_beneficial_duplicates(current_ast, min_savings=min_savings)
+
+    if not beneficial_dupes:
+        return [(current_ast, None)]
+    largest_dupe = beneficial_dupes[0][2]
+    replaced_ast = replace_in_ast(current_ast, largest_dupe, "ans")
+    return [(largest_dupe, "ans"), (replaced_ast, None)]
 
 
 if __name__ == "__main__":
     with open("mockup.pm3") as f:
         code = [line.rstrip() for line in f.readlines() if line]
-        parse_pm3(code)
+        asts, config = parse_pm3_to_ast(code)
+        with open("math.txt", "w") as f:
+            for i, output in enumerate(asts):
+                ast = output.ast
+                if output.config.simplify:
+                    ast = simplify_literals_ast(ast, output.config)
+
+                # nts: fix dupe later
+
+                f.write(f"to {output.output}\n")
+                f.write(generate_expression(ast) + "\n")
+
+        for i in asts:
+            print(i.ast)

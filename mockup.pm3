@@ -36,6 +36,7 @@ repeat 2 i
 
     repeat 2 k
         repeat 3 l
+            out c
             return square(l)
     
     repeat 2
