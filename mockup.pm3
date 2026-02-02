@@ -4,7 +4,7 @@
 
 # test line with no content
 
-//dupe false
+//dupe true -999
 //simplify true
 //sympy false
 
@@ -20,24 +20,14 @@ def better_mod divend divdor
 
 out c
 return 20 + 2 / 10 / 2
-return 20 / mod(7, 8)
-return var + python_var + dependent  # output to display
+return (2 + 20) / (20 + 2)
+# return 20 / mod(7, 8)
+# return var + python_var + dependent  # output to display
 
-return max0(var) == !(var >= 2)
-return if(a==0, a, 0)
+# return max0(var) == !(var >= 2)
+# return if(a==0, a, 0)
 
-return better_mod(7, 3)
+# return better_mod(7, 3)
 
 def square a
     return a ** 2
-
-repeat 2 i
-    hi = 2
-
-    repeat 2 k
-        repeat 3 l
-            out c
-            return square(l)
-    
-    repeat 2
-        return 0

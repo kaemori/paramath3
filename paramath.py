@@ -191,7 +191,12 @@ def generate_ast(tokens):
                 return result, i
             elif token == ",":
                 return result, i
-            elif i + 1 < len(tokens) and tokens[i + 1] == "(":
+            elif (
+                i + 1 < len(tokens)
+                and tokens[i + 1] == "("
+                and isinstance(token, str)
+                and token.isidentifier()
+            ):
                 func_name = token
                 args = []
                 i += 2
@@ -217,7 +222,8 @@ def generate_ast(tokens):
         return result, i
 
     ast, _ = parse_expr(0)
-    return ast if len(ast) != 1 else ast[0]
+    ast = ast if len(ast) != 1 else ast[0]
+    return ast
 
 
 def infix_to_postfix(ast):
@@ -352,6 +358,41 @@ def expand_functions(ast, functions):
         return ast
 
 
+def ast_sort_key(x):
+    is_const = is_constant(x)
+    try:
+        length = expr_length(x) if isinstance(x, list) else (0 if is_const else 9999)
+    except Exception:
+        length = 9999
+    s = json.dumps(x, sort_keys=False, default=str)
+    return (0 if is_const else 1, length, s)
+
+
+def normalize_ast(ast):
+    if not isinstance(ast, list):
+        return ast
+
+    if not ast:
+        return ast
+
+    ast = [normalize_ast(elem) for elem in ast]
+
+    op = ast[0] if isinstance(ast[0], str) else None
+
+    if op in {"+", "*"}:
+        operands = []
+        for a in ast[1:]:
+            if isinstance(a, list) and a and a[0] == op:
+                operands.extend(a[1:])
+            else:
+                operands.append(a)
+
+        operands.sort(key=ast_sort_key)
+        return [op] + operands
+
+    return ast
+
+
 def parse_pragma(line: str, config: ProgramConfig):
     pragma, value = line.split(" ", 1)
     if pragma == "precision":
@@ -407,11 +448,22 @@ def substitute_vars(tokens, subst_vars):
 
 
 def parse_expression(tokens, subst_vars, functions):
+    print("Parsing expression:", tokens)
     result = substitute_vars(tokens, subst_vars)
+    print("After substitution:", result)
     ast = generate_ast(result)
+    print("Generated AST:", ast)
     ast = infix_to_postfix(ast)
+    print("Postfix AST:", ast)
     expr = expand_expression(ast)
+    print("Expanded AST:", expr)
     expr = expand_functions(expr, functions)
+    print("After function expansion:", expr)
+
+    # Normalize AST deterministically (flatten/sort commutative ops)
+    expr = normalize_ast(expr)
+    print("Normalized AST:", expr)
+    print("")
     return expr
 
 
@@ -816,6 +868,37 @@ def simplify_literals_ast(ast, config):
         return ast
 
 
+def simplify_algebratic_identities(ast):
+    if isinstance(ast, list):
+        if ast[0] == "*":
+            if len(ast) == 3:
+                if ast[1] == 0 or ast[2] == 0:
+                    return 0
+                if ast[1] == 1:
+                    return simplify_algebratic_identities(ast[2])
+                if ast[2] == 1:
+                    return simplify_algebratic_identities(ast[1])
+        if ast[0] == "+":
+            if len(ast) == 3:
+                if ast[1] == 0:
+                    return simplify_algebratic_identities(ast[2])
+                if ast[2] == 0:
+                    return simplify_algebratic_identities(ast[1])
+        if ast[0] == "-":
+            if len(ast) == 3:
+                if ast[2] == 0:
+                    return simplify_algebratic_identities(ast[1])
+
+    else:
+        return ast
+
+
+def simplify_ast(ast, config):
+    ast = simplify_literals_ast(ast, config)
+    ast = simplify_algebratic_identities(ast)
+    return ast
+
+
 def all_sublists(expr):
     if isinstance(expr, list):
         yield expr
@@ -875,16 +958,24 @@ if __name__ == "__main__":
     with open("mockup.pm3") as f:
         code = [line.rstrip() for line in f.readlines() if line]
         asts, config = parse_pm3_to_ast(code)
-        with open("math.txt", "w") as f:
-            for i, output in enumerate(asts):
-                ast = output.ast
+        outputs = []
+        for i, output in enumerate(asts):
+            if output.config.dupe:
+                for extraction, variable in extract_subexpressions(
+                    output.ast, min_savings=output.config.dupe_min_savings
+                ):
+                    if output.config.simplify:
+                        extraction = simplify_ast(extraction, output.config)
+                    outputs.append(AstOutput(output=variable, ast=extraction))
+            else:
                 if output.config.simplify:
-                    ast = simplify_literals_ast(ast, output.config)
+                    output.ast = simplify_ast(output.ast, output.config)
+                outputs.append(AstOutput(output=output.output, ast=output.ast))
 
-                # nts: fix dupe later
-
+        with open("math.txt", "w") as f:
+            for i, output in enumerate(outputs):
+                expr = generate_expression(output.ast)
                 f.write(f"to {output.output}\n")
-                f.write(generate_expression(ast) + "\n")
-
-        for i in asts:
-            print(i.ast)
+                f.write(expr + "\n")
+                print(f"to {output.output}")
+                print(expr)
