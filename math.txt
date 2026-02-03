@@ -1,6 +1,6 @@
-to None
+to c:
 20.1
-to ans
-22
-to None
-(ans / ans)
+to ans:
+(20 + a)
+to d:
+(ans ** ans)
