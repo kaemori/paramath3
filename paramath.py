@@ -1,50 +1,8 @@
 import math
 import json
 import builtins
-import re
 from dataclasses import dataclass, replace
 from typing import Union
-
-
-def _capitalize_error_message(message: str) -> str:
-    msg = "" if message is None else str(message)
-    msg = msg.strip()
-    if not msg:
-        return msg
-
-    # Uppercase the first letter-like character, without lowercasing the rest.
-    for i, ch in enumerate(msg):
-        if ch.isalpha():
-            return msg[:i] + ch.upper() + msg[i + 1 :]
-
-    # Fallback: just uppercase the first character.
-    return msg[0].upper() + msg[1:]
-
-
-def _format_error(message: str, line_num: int | None = None) -> str:
-    msg = _capitalize_error_message(message)
-
-    if line_num is None:
-        return msg
-
-    # Avoid doubling up if a line prefix already exists.
-    if msg.lower().startswith("line "):
-        return msg
-
-    # Strip common trailing "at/in line N" patterns before prefixing.
-    for suffix in (
-        f" at line {line_num}",
-        f" in line {line_num}",
-        f" at Line {line_num}",
-        f" in Line {line_num}",
-    ):
-        if msg.endswith(suffix):
-            msg = msg[: -len(suffix)].rstrip()
-
-    # Also strip patterns like "... at line N:" (rare but happens).
-    msg = re.sub(r"\s+(at|in)\s+line\s+\d+\s*:\s*$", "", msg, flags=re.IGNORECASE)
-
-    return f"Line {line_num}: {msg}"
 
 
 OPERATION_EXPANSIONS = {
@@ -130,7 +88,7 @@ def num(val: Union[str, int, float]) -> Union[int, float]:
         else:
             return float(val)
     except ValueError:
-        raise ValueError(_format_error(f"Cannot turn {val!r} into a number"))
+        raise ValueError(f"Cannot turn {val!r} into a number")
 
 
 class EvalVars:
@@ -268,10 +226,10 @@ def generate_ast(tokens):
     if end_idx != len(tokens):
         bad = tokens[end_idx]
         if bad == ")":
-            raise SyntaxError(_format_error("Unexpected closing parenthesis"))
+            raise SyntaxError("Unexpected closing parenthesis")
         if bad == ",":
-            raise SyntaxError(_format_error("Unexpected comma"))
-        raise SyntaxError(_format_error(f"Unexpected token: {bad!r}"))
+            raise SyntaxError("Unexpected comma")
+        raise SyntaxError(f"Unexpected token: {bad!r}")
     ast = ast if len(ast) != 1 else ast[0]
     return ast
 
@@ -447,38 +405,32 @@ def parse_pragma(line: str, config: ProgramConfig):
     pragma, value = line.split(" ", 1)
     if pragma == "precision":
         if not value.isdigit():
-            raise ValueError(
-                _format_error(f"Precision must be an integer, got {value!r}")
-            )
+            raise ValueError(f"Precision must be an integer, got {value!r}")
         config.precision = int(value)
     elif pragma == "epsilon":
         try:
             float(value)
         except ValueError:
-            raise ValueError(
-                _format_error(f"Epsilon must be a float, got {value!r}")
-            ) from None
+            raise ValueError(f"Epsilon must be a float, got {value!r}") from None
         config.epsilon = float(value)
     elif pragma == "variables":
         config.variables = [var.strip() for var in value.split(" ")]
     elif pragma == "dupe":
         parts = value.strip().split()
         if not parts:
-            raise ValueError(_format_error("Dupe requires true/false"))
+            raise ValueError("Dupe requires true/false")
         config.dupe = parts[0].lower() == "true"
         if len(parts) >= 2:
             try:
                 config.dupe_min_savings = int(parts[1])
             except ValueError:
-                raise ValueError(
-                    _format_error("Dupe min_savings must be an integer")
-                ) from None
+                raise ValueError("Dupe min_savings must be an integer") from None
     elif pragma == "simplify":
         config.simplify = value.lower() == "true"
     elif pragma == "sympy":
         config.sympy = value.lower() == "true"
     else:
-        raise ValueError(_format_error(f"Unknown pragma: {pragma}"))
+        raise ValueError(f"Unknown pragma: {pragma}")
 
 
 def _raise_if_conflicts_with_declared_variables(
@@ -490,12 +442,10 @@ def _raise_if_conflicts_with_declared_variables(
 ):
     declared_variables = declared_variables or []
     if name in declared_variables:
-        raise ValueError(
-            _format_error(
-                f"{kind} {name!r} conflicts with a name declared in //variables",
-                line_num,
-            )
-        )
+        msg = f"{kind} {name!r} conflicts with a name declared in //variables"
+        if line_num is not None:
+            msg = f"Line {line_num}: {msg}"
+        raise ValueError(msg)
 
 
 def _is_number_like(token: str) -> bool:
@@ -514,12 +464,16 @@ def _validate_balanced_parentheses(tokens: list, *, line_num: int | None = None)
         elif tok == ")":
             depth -= 1
             if depth < 0:
-                raise SyntaxError(
-                    _format_error("Unexpected closing parenthesis", line_num)
-                ) from None
+                msg = "Unexpected closing parenthesis"
+                if line_num is not None:
+                    msg = f"Line {line_num}: {msg}"
+                raise SyntaxError(msg) from None
 
     if depth != 0:
-        raise SyntaxError(_format_error("Unexpected end of tokens", line_num)) from None
+        msg = "Unexpected end of tokens"
+        if line_num is not None:
+            msg = f"Line {line_num}: {msg}"
+        raise SyntaxError(msg) from None
 
 
 def _validate_no_undefined_identifiers(
@@ -546,9 +500,10 @@ def _validate_no_undefined_identifiers(
                     and head not in allowed_funcs
                 ):
                     raise SyntaxError(
-                        _format_error(
-                            f"Malformed expression: {generate_expression(node)}",
-                            line_num,
+                        (
+                            f"Line {line_num}: Malformed expression: {generate_expression(node)}"
+                            if line_num is not None
+                            else f"Malformed expression: {generate_expression(node)}"
                         )
                     ) from None
             for child in node[1:] if (node and isinstance(node[0], str)) else node:
@@ -569,9 +524,10 @@ def _validate_no_undefined_identifiers(
 
             if node.isidentifier():
                 if node not in allowed_vars:
-                    raise SyntaxError(
-                        _format_error(f"Undefined identifier: {node}", line_num)
-                    ) from None
+                    msg = f"Undefined identifier: {node}"
+                    if line_num is not None:
+                        msg = f"Line {line_num}: {msg}"
+                    raise SyntaxError(msg) from None
                 return
 
     walk(ast)
@@ -594,18 +550,30 @@ def parse_expression(tokens, subst_vars, functions, line_num):
     try:
         ast = generate_ast(result)
     except SyntaxError as e:
-        raise SyntaxError(_format_error(str(e), line_num)) from None
+        msg = str(e).strip()
+        if line_num is not None and not msg.lower().startswith("line "):
+            msg = f"Line {line_num}: {msg}"
+        raise SyntaxError(msg) from None
     print("Generated AST:", ast)
 
     if len(ast) == 0:
-        raise SyntaxError(_format_error("Empty expression", line_num))
+        msg = "Empty expression"
+        if line_num is not None:
+            msg = f"Line {line_num}: {msg}"
+        raise SyntaxError(msg)
 
     try:
         ast = infix_to_postfix(ast)
     except IndexError:
-        raise SyntaxError(_format_error("Malformed expression", line_num)) from None
+        msg = "Malformed expression"
+        if line_num is not None:
+            msg = f"Line {line_num}: {msg}"
+        raise SyntaxError(msg) from None
     except SyntaxError as e:
-        raise SyntaxError(_format_error(str(e), line_num)) from None
+        msg = str(e).strip()
+        if line_num is not None and not msg.lower().startswith("line "):
+            msg = f"Line {line_num}: {msg}"
+        raise SyntaxError(msg) from None
 
     print("Postfix AST:", ast)
     expr = expand_expression(ast)
@@ -613,7 +581,10 @@ def parse_expression(tokens, subst_vars, functions, line_num):
     try:
         expr = expand_functions(expr, functions)
     except Exception as e:
-        raise type(e)(_format_error(str(e), line_num)) from None
+        msg = str(e).strip()
+        if line_num is not None and not msg.lower().startswith("line "):
+            msg = f"Line {line_num}: {msg}"
+        raise type(e)(msg) from None
     print("After function expansion:", expr)
 
     expr = normalize_ast(expr)
@@ -668,9 +639,10 @@ def parse_function(
             try:
                 result = eval(expr, eval_namespace)
             except Exception as e:
-                raise ValueError(
-                    _format_error(f"Python eval failed: {e}", statement_line_num)
-                ) from None
+                msg = f"Python eval failed: {e}"
+                if statement_line_num is not None:
+                    msg = f"Line {statement_line_num}: {msg}"
+                raise ValueError(msg) from None
             local_scope[var_name] = [str(result)]
 
         elif tokens and tokens[0] == "return":
@@ -687,17 +659,16 @@ def parse_function(
             return expr
 
         else:
-            raise SyntaxError(
-                _format_error(
-                    f"Unknown statement in function \"{name}\": {' '.join(tokens)}",
-                    statement_line_num,
-                )
-            )
+            msg = f"Unknown statement in function \"{name}\": {' '.join(tokens)}"
+            if statement_line_num is not None:
+                msg = f"Line {statement_line_num}: {msg}"
+            raise SyntaxError(msg)
 
     # no return statement
-    raise SyntaxError(
-        _format_error(f'Function "{name}" missing return statement', header_line_num)
-    )
+    msg = f'Function "{name}" missing return statement'
+    if header_line_num is not None:
+        msg = f"Line {header_line_num}: {msg}"
+    raise SyntaxError(msg)
 
 
 def parse_repeat(
@@ -731,12 +702,10 @@ def parse_repeat(
             line_num=header_line_num,
         )
         if repeat_var in subst_vars.keys() or repeat_var in outer_bindings:
-            raise ValueError(
-                _format_error(
-                    f"Iteration variable {repeat_var!r} conflicts with an existing substitution or loop binding",
-                    header_line_num,
-                )
-            )
+            msg = f"Iteration variable {repeat_var!r} conflicts with an existing substitution or loop binding"
+            if header_line_num is not None:
+                msg = f"Line {header_line_num}: {msg}"
+            raise ValueError(msg)
 
     def dedent_once(token_list):
         if token_list and token_list[0] == "__TAB__":
@@ -752,7 +721,10 @@ def parse_repeat(
     try:
         total_iterations = num(times)
     except Exception as e:
-        raise ValueError(_format_error(str(e), header_line_num)) from None
+        msg = str(e).strip()
+        if header_line_num is not None and not msg.lower().startswith("line "):
+            msg = f"Line {header_line_num}: {msg}"
+        raise ValueError(msg) from None
 
     for itr in range(total_iterations):
         itr_bindings = (
@@ -803,21 +775,20 @@ def parse_repeat(
                 try:
                     result = eval(expr, eval_namespace)
                 except Exception as e:
-                    raise ValueError(
-                        _format_error(f"Python eval failed: {e}", statement_line_num)
-                    ) from None
+                    msg = f"Python eval failed: {e}"
+                    if statement_line_num is not None:
+                        msg = f"Line {statement_line_num}: {msg}"
+                    raise ValueError(msg) from None
                 subst_vars[var_name] = [str(result)]
                 line_no += 1
                 continue
 
             if tokens[0] == "repeat":
                 if len(tokens) < 2:
-                    raise SyntaxError(
-                        _format_error(
-                            "Repeat requires at least a repetition count",
-                            statement_line_num,
-                        )
-                    )
+                    msg = "Repeat requires at least a repetition count"
+                    if statement_line_num is not None:
+                        msg = f"Line {statement_line_num}: {msg}"
+                    raise SyntaxError(msg)
 
                 nested_times = tokens[1]
                 nested_repeat_var = tokens[2] if len(tokens) >= 3 else None
@@ -858,21 +829,18 @@ def parse_repeat(
 
             if tokens[0] == "out":
                 if len(tokens) < 2:
-                    raise SyntaxError(
-                        _format_error(
-                            "Out requires a variable name", statement_line_num
-                        )
-                    )
+                    msg = "Out requires a variable name"
+                    if statement_line_num is not None:
+                        msg = f"Line {statement_line_num}: {msg}"
+                    raise SyntaxError(msg)
                 output_var = tokens[1]
                 if output_var in variables:
                     output_state["output"] = output_var
                 else:
-                    raise ValueError(
-                        _format_error(
-                            f"Output variable {output_var!r} not declared in variables",
-                            statement_line_num,
-                        )
-                    )
+                    msg = f"Output variable {output_var!r} not declared in variables"
+                    if statement_line_num is not None:
+                        msg = f"Line {statement_line_num}: {msg}"
+                    raise ValueError(msg)
                 line_no += 1
                 continue
 
@@ -903,9 +871,10 @@ def parse_repeat(
                 continue
 
             raise SyntaxError(
-                _format_error(
-                    f"Unknown statement in repeat: {' '.join(tokens)}",
-                    statement_line_num,
+                (
+                    f"Line {statement_line_num}: Unknown statement in repeat: {' '.join(tokens)}"
+                    if statement_line_num is not None
+                    else f"Unknown statement in repeat: {' '.join(tokens)}"
                 )
             )
 
@@ -978,19 +947,13 @@ def parse_pm3_to_ast(code):
         if not collecting_function and not collecting_loop:
             if tokens[0] == "__TAB__":
                 raise ValueError(
-                    _format_error(
-                        "Unexpected indentation outside function or loop",
-                        line_num,
-                    )
+                    f"Line {line_num}: Unexpected indentation outside function or loop"
                 )
 
             if tokens[0] == "def":
                 if collecting_loop:
                     raise ValueError(
-                        _format_error(
-                            "Function definitions inside loops are not supported",
-                            line_num,
-                        )
+                        f"Line {line_num}: Function definitions inside loops are not supported"
                     )
                 collecting_function = True
                 function_body = []
@@ -1018,26 +981,17 @@ def parse_pm3_to_ast(code):
                     output_state["output"] = output
                 else:
                     raise ValueError(
-                        _format_error(
-                            f"Output variable {output!r} not declared in variables",
-                            line_num,
-                        )
+                        f"Line {line_num}: Output variable {output!r} not declared in variables"
                     )
 
             elif tokens[0] == "return":
                 if config.precision is None:
                     raise ValueError(
-                        _format_error(
-                            "Precision must be set before return statement",
-                            line_num,
-                        )
+                        f"Line {line_num}: Precision must be set before return statement"
                     )
                 if config.epsilon is None:
                     raise ValueError(
-                        _format_error(
-                            "Epsilon must be set before return statement",
-                            line_num,
-                        )
+                        f"Line {line_num}: Epsilon must be set before return statement"
                     )
                 expr_tokens = tokens[1:]
                 expr = parse_expression(expr_tokens, subst_vars, funcs, line_num)
@@ -1063,13 +1017,13 @@ def parse_pm3_to_ast(code):
                     try:
                         parse_pragma(line.strip()[2:].strip(), config)
                     except Exception as e:
-                        raise type(e)(_format_error(str(e), line_num)) from None
+                        msg = str(e).strip()
+                        if not msg.lower().startswith("line "):
+                            msg = f"Line {line_num}: {msg}"
+                        raise type(e)(msg) from None
                 else:
                     raise ValueError(
-                        _format_error(
-                            "Pragmas inside functions or loops are not supported",
-                            line_num,
-                        )
+                        f"Line {line_num}: Pragmas inside functions or loops are not supported"
                     )
 
             else:
@@ -1101,15 +1055,12 @@ def parse_pm3_to_ast(code):
                         result = eval(expr, eval_namespace)
                     except Exception as e:
                         raise ValueError(
-                            _format_error(f"Python eval failed: {e}", line_num)
+                            f"Line {line_num}: Python eval failed: {e}"
                         ) from None
                     subst_vars[var_name] = [str(result)]
                 else:
                     raise SyntaxError(
-                        _format_error(
-                            f"Unknown statement: {' '.join(tokens)}",
-                            line_num,
-                        )
+                        f"Line {line_num}: Unknown statement: {' '.join(tokens)}"
                     )
 
     if collecting_function:
