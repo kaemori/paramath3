@@ -3,6 +3,10 @@ import json
 import builtins
 from dataclasses import dataclass, replace
 from typing import Union
+from functools import lru_cache
+import os
+import re
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 OPERATION_EXPANSIONS = {
@@ -63,7 +67,20 @@ OPERATION_EXPANSIONS = {
     "round": lambda a: ["-", a, ["/", ["arctan", ["tan", ["*", "pi", a]]], "pi"]],
 }
 INFIX_OPERATIONS = {"==", "!=", ">", "<", ">=", "<=", "+", "-", "*", "/", "**"}
-
+precedence = {
+    "==": 0,
+    "!=": 0,
+    ">": 0,
+    "<": 0,
+    ">=": 0,
+    "<=": 0,
+    "+": 1,
+    "-": 1,
+    "*": 2,
+    "/": 2,
+    "**": 3,
+}
+right_assoc = {"**", "+", "-", "*", "/"}
 
 math_funcs = {
     "sin": math.sin,
@@ -130,6 +147,7 @@ class FunctionDef:
 class AstOutput:
     output: str = None
     ast: Union[list, float, int] = None
+    sympy: bool = False
 
 
 def is_constant(expr):
@@ -235,21 +253,6 @@ def generate_ast(tokens):
 
 
 def infix_to_postfix(ast):
-    precedence = {
-        "==": 0,
-        "!=": 0,
-        ">": 0,
-        "<": 0,
-        ">=": 0,
-        "<=": 0,
-        "+": 1,
-        "-": 1,
-        "*": 2,
-        "/": 2,
-        "**": 3,
-    }
-    right_assoc = {"**"}
-
     def is_op(token):
         return isinstance(token, str) and token in INFIX_OPERATIONS
 
@@ -388,14 +391,8 @@ def normalize_ast(ast):
     op = ast[0] if isinstance(ast[0], str) else None
 
     if op in {"+", "*"}:
-        operands = []
-        for a in ast[1:]:
-            if isinstance(a, list) and a and a[0] == op:
-                operands.extend(a[1:])
-            else:
-                operands.append(a)
-
-        operands.sort(key=ast_sort_key)
+        operands = ast[1:]
+        operands.sort(key=ast_sort_key, reverse=True)
         return [op] + operands
 
     return ast
@@ -544,9 +541,9 @@ def substitute_vars(tokens, subst_vars):
 
 def parse_expression(tokens, subst_vars, functions, line_num):
     _validate_balanced_parentheses(tokens, line_num=line_num)
-    print("Parsing expression:", tokens)
+    # print("Parsing expression:", tokens)
     result = substitute_vars(tokens, subst_vars)
-    print("After substitution:", result)
+    # print("After substitution:", result)
     try:
         ast = generate_ast(result)
     except SyntaxError as e:
@@ -554,7 +551,7 @@ def parse_expression(tokens, subst_vars, functions, line_num):
         if line_num is not None and not msg.lower().startswith("line "):
             msg = f"Line {line_num}: {msg}"
         raise SyntaxError(msg) from None
-    print("Generated AST:", ast)
+    # print("Generated AST:", ast)
 
     if len(ast) == 0:
         msg = "Empty expression"
@@ -575,9 +572,9 @@ def parse_expression(tokens, subst_vars, functions, line_num):
             msg = f"Line {line_num}: {msg}"
         raise SyntaxError(msg) from None
 
-    print("Postfix AST:", ast)
+    # print("Postfix AST:", ast)
     expr = expand_expression(ast)
-    print("Expanded AST:", expr)
+    # print("Expanded AST:", expr)
     try:
         expr = expand_functions(expr, functions)
     except Exception as e:
@@ -585,11 +582,10 @@ def parse_expression(tokens, subst_vars, functions, line_num):
         if line_num is not None and not msg.lower().startswith("line "):
             msg = f"Line {line_num}: {msg}"
         raise type(e)(msg) from None
-    print("After function expansion:", expr)
+    # print("After function expansion:", expr)
 
     expr = normalize_ast(expr)
-    print("Normalized AST:", expr)
-    print("")
+    # print("Normalized AST:", expr, "\n")
     return expr
 
 
@@ -1106,21 +1102,52 @@ def parse_pm3_to_ast(code):
 
 
 def generate_expression(ast):
-    if isinstance(ast, list):
-        if not ast:
-            return ""
-        if isinstance(ast[0], str):
-            func_name = ast[0]
-            if func_name in INFIX_OPERATIONS and len(ast) == 3:
-                left = generate_expression(ast[1])
-                right = generate_expression(ast[2])
-                return f"({left} {func_name} {right})"
-            args = [generate_expression(arg) for arg in ast[1:]]
-            return f"{func_name}({', '.join(args)})"
+    def needs_parens(parent_op, child_ast, is_right=False):
+        if not isinstance(child_ast, list):
+            return False
+        if not isinstance(child_ast[0], str):
+            return True
+
+        child_op = child_ast[0]
+        if child_op not in precedence:
+            return False
+
+        parent_prec = precedence.get(parent_op, 999)
+        child_prec = precedence.get(child_op, 999)
+
+        if child_prec < parent_prec:
+            return True
+
+        if child_prec == parent_prec:
+            if is_right and parent_op not in right_assoc:
+                return True
+
+        return False
+
+    def gen(ast):
+        if isinstance(ast, list):
+            if not ast:
+                return ""
+            if isinstance(ast[0], str):
+                func_name = ast[0]
+                if func_name in INFIX_OPERATIONS:
+                    args = []
+                    for i, arg in enumerate(ast[1:]):
+                        is_right_arg = i == len(ast[1:]) - 1
+                        arg_str = gen(arg)
+                        if needs_parens(func_name, arg, is_right_arg):
+                            arg_str = f"({arg_str})"
+                        args.append(arg_str)
+                    return f" {func_name} ".join(args)
+                else:
+                    args = [gen(arg) for arg in ast[1:]]
+                    return f"{func_name}({', '.join(args)})"
+            else:
+                return "(" + " ".join(gen(elem) for elem in ast) + ")"
         else:
-            return "(" + " ".join(generate_expression(elem) for elem in ast) + ")"
-    else:
-        return str(ast)
+            return str(ast)
+
+    return gen(ast)
 
 
 def simplify_literals_ast(ast, config):
@@ -1134,7 +1161,7 @@ def simplify_literals_ast(ast, config):
                 "epsilon": config.epsilon,
             }
             result = eval(expr_str, eval_namespace)
-            if config.precision is not None and isinstance(result, float):
+            if isinstance(result, float):
                 result = round(result, config.precision)
             return result
         else:
@@ -1261,18 +1288,98 @@ def extract_subexpressions(ast, output_variable, min_savings):
     return [(largest_dupe, "ans"), (replaced_ast, output_variable)]
 
 
+def _normalize_for_sympy(expr: str) -> str:
+    return (
+        expr.replace("arcsin", "asin")
+        .replace("arccos", "acos")
+        .replace("arctan", "atan")
+        .replace("abs(", "Abs(")
+        .replace("euler", "E")
+    )
+
+
+def _denormalize_from_sympy(expr: str) -> str:
+    expr = (
+        expr.replace("asin", "arcsin")
+        .replace("acos", "arccos")
+        .replace("atan", "arctan")
+        .replace("Abs", "abs")
+    )
+    expr = re.sub(r"\bE\b", "euler", expr)
+    return expr
+
+
+def _format_expression(expr: str) -> str:
+    return " ".join(tokenize(expr)).replace("( ", "(").replace(" )", ")")
+
+
+def _sympy_simplify_worker(task: tuple[int, str]) -> tuple[int, str]:
+    index, expr_str = task
+    try:
+        import sympy
+
+        sympy_in = _normalize_for_sympy(expr_str)
+        sympy_expr = sympy.sympify(sympy_in)
+        simplified = sympy.simplify(sympy_expr)
+        out = str(simplified).replace(".0e", "e")
+        out = _denormalize_from_sympy(out)
+        out = _format_expression(out)
+        return index, out
+    except Exception:
+        return index, expr_str
+
+
+def simplify_sympy_multicore(
+    expressions: list[str], *, show_progress: bool = True
+) -> list[str]:
+    if not expressions:
+        return []
+
+    try:
+        from tqdm import tqdm
+    except Exception:
+        tqdm = None
+
+    tasks = list(enumerate(expressions))
+    results: list[str] = list(expressions)
+
+    if len(tasks) == 1:
+        idx, simplified = _sympy_simplify_worker(tasks[0])
+        results[idx] = simplified
+        return results
+
+    max_workers = max(1, min(len(tasks), os.cpu_count() or 1))
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_sympy_simplify_worker, task) for task in tasks]
+        iterator = as_completed(futures)
+
+        if tqdm is not None and show_progress:
+            iterator = tqdm(iterator, total=len(futures), desc="sympy", unit="expr")
+
+        for fut in iterator:
+            idx, simplified = fut.result()
+            results[idx] = simplified
+
+    return results
+
+
 if __name__ == "__main__":
     with open("mockup.pm3") as f:
         code = [line.rstrip() for line in f.readlines() if line]
         asts, config = parse_pm3_to_ast(code)
-        outputs = []
+        outputs_ast = []
         for i, output in enumerate(asts):
             if output.config.simplify:
                 output.ast = simplify_ast(output.ast, output.config)
-                line = AstOutput(output=output.output, ast=output.ast)
+                line = AstOutput(
+                    output=output.output, ast=output.ast, sympy=output.config.sympy
+                )
 
             else:
-                line = AstOutput(output=output.output, ast=output.ast)
+                line = AstOutput(
+                    output=output.output, ast=output.ast, sympy=output.config.sympy
+                )
 
             if output.config.dupe:
                 for extraction, variable in extract_subexpressions(
@@ -1280,14 +1387,38 @@ if __name__ == "__main__":
                     line.output,
                     min_savings=output.config.dupe_min_savings,
                 ):
-                    outputs.append(AstOutput(output=variable, ast=extraction))
+                    outputs_ast.append(
+                        AstOutput(
+                            output=variable, ast=extraction, sympy=output.config.sympy
+                        )
+                    )
             else:
-                outputs.append(line)
+                outputs_ast.append(line)
+
+        if sympy_jobs := sum(ast.sympy for ast in outputs_ast):
+            try:
+                import sympy
+            except ImportError:
+                raise ImportError(
+                    "SymPy is required for sympy output. Please install it via 'pip install sympy'."
+                ) from None
+
+        exprs = [generate_expression(item.ast) for item in outputs_ast]
+
+        if sympy_jobs:
+            sympy_indexes = [i for i, item in enumerate(outputs_ast) if item.sympy]
+            sympy_exprs = [exprs[i] for i in sympy_indexes]
+            simplified_sympy_exprs = simplify_sympy_multicore(
+                sympy_exprs, show_progress=True
+            )
+            for i, simplified in zip(sympy_indexes, simplified_sympy_exprs):
+                exprs[i] = simplified
+
+        outputs = [(item.output, exprs[i]) for i, item in enumerate(outputs_ast)]
 
         with open("math.txt", "w") as f:
-            for i, output in enumerate(outputs):
-                expr = generate_expression(output.ast)
-                f.write(f"to {output.output}:\n")
+            for output, expr in outputs:
+                f.write(f"to {output}:\n")
                 f.write(expr + "\n")
-                print(f"to {output.output}:")
+                print(f"to {output}:")
                 print(expr)

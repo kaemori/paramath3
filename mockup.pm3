@@ -1,12 +1,10 @@
-//precision 3
+//precision 50
 //epsilon 1e-99
 //variables a b c d e f x y z m
 
-# test line with no content
-
-//dupe true -999
-//simplify true
-//sympy false
+//dupe true
+//simplify false
+//sympy true
 
 python_var := len("rawr")
 var = 69 + 1
@@ -14,8 +12,8 @@ dependent = a
 
 def better_mod divend divdor
     fractional = frac(divend / divdor)
-    python_eval_1 := len("a b")
-    return fractional * divdor * python_eval_1
+
+    return fractional * divdor * 3
     # return var
 
 out c
@@ -23,13 +21,22 @@ return 20 + 2 / 10 / 2
 out d
 return (a + 20) ** (20 + a)
 
+# //sympy true
+out m
+return sin(x) ** 2 + cos(x) ** 2
+# //sympy false
+
 # return 20 / mod(7, 8)
 # return var + python_var + dependent  # output to display
 
 # return max0(var) == !(var >= 2)
 # return if(a==0, a, 0)
 
+return 3 + 3 + 4 * 2
+return 3 * 3 * 4 + 2
 # return better_mod(7, 3)
 
 def square a
     return a ** 2
+
+return square(2)
