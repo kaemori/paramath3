@@ -1,1 +1,8 @@
 .venv
+.gitignore
+*.log
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.env

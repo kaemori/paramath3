@@ -1,14 +1,13 @@
 import math
-import json
 import builtins
 from dataclasses import dataclass, replace
-from typing import Union
-from functools import lru_cache
-import os
-import re
+from typing import Union, Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
+DEBUG = False
+VERBOSE = False
+LOGFILE = None
 OPERATION_EXPANSIONS = {
     "==": lambda a, b, eps: [
         "/",
@@ -67,6 +66,7 @@ OPERATION_EXPANSIONS = {
     "round": lambda a: ["-", a, ["/", ["arctan", ["tan", ["*", "pi", a]]], "pi"]],
 }
 INFIX_OPERATIONS = {"==", "!=", ">", "<", ">=", "<=", "+", "-", "*", "/", "**"}
+SYMPY_WORKERS = 4
 precedence = {
     "==": 0,
     "!=": 0,
@@ -92,10 +92,68 @@ math_funcs = {
     "arcsin": math.asin,
     "arccos": math.acos,
     "arctan": math.atan,
+    "sqrt": math.sqrt,
     "abs": abs,
     "pi": math.pi,
     "euler": math.e,
 }
+
+
+def _log_message(prefix: str, message: str, max_len: int = 127):
+    original_len = len(message)
+    truncated = message[:max_len]
+    log_line = f"[{prefix} {original_len}] {truncated}{'...' if original_len > max_len else ''}"
+    print(log_line)
+    if LOGFILE:
+        with open(LOGFILE, "a") as f:
+            f.write(f"[{prefix} {original_len}] {message}\n")
+
+
+def print_debug(msg: str):
+    if DEBUG:
+        _log_message("DEBUG", msg)
+
+
+def print_verbose(msg: str):
+    if VERBOSE:
+        _log_message("VERBOSE", msg)
+
+
+def _preview_sequence(seq, *, max_items: int = 16) -> str:
+    try:
+        n = len(seq)
+    except Exception:
+        return repr(seq)
+
+    if n <= max_items:
+        return repr(seq)
+    head = list(seq[:max_items])
+    return f"{head!r}... (+{n - max_items} more)"
+
+
+def stable_serialize(obj) -> str:
+    if obj is None or isinstance(obj, (bool, int, float, complex, str)):
+        return repr(obj)
+
+    if isinstance(obj, (list, tuple)):
+        open_bracket, close_bracket = (
+            ("[", "]") if isinstance(obj, list) else ("(", ")")
+        )
+        return open_bracket + ",".join(stable_serialize(x) for x in obj) + close_bracket
+
+    if isinstance(obj, dict):
+        items = sorted(obj.items(), key=lambda kv: stable_serialize(kv[0]))
+        return (
+            "{"
+            + ",".join(f"{stable_serialize(k)}:{stable_serialize(v)}" for k, v in items)
+            + "}"
+        )
+
+    if isinstance(obj, set):
+        items = sorted((stable_serialize(x) for x in obj))
+        return "set{" + ",".join(items) + "}"
+
+    return repr(obj)
 
 
 def num(val: Union[str, int, float]) -> Union[int, float]:
@@ -193,11 +251,17 @@ def tokenize(line):
     while "  " in line:
         line = line.replace("  ", " ")
 
-    return line.strip().split(" ")
+    tokens = line.strip().split(" ")
+    print_debug(f"tokenize: {len(tokens)} tokens, head={_preview_sequence(tokens)}")
+    return tokens
 
 
 def generate_ast(tokens):
     tokens = [t for t in tokens if t and t != "\n"]
+
+    print_debug(
+        f"generate_ast: {len(tokens)} tokens, head={_preview_sequence(tokens)}"
+    )
 
     def parse_expr(idx):
         result = []
@@ -243,12 +307,16 @@ def generate_ast(tokens):
     ast, end_idx = parse_expr(0)
     if end_idx != len(tokens):
         bad = tokens[end_idx]
+        print_debug(
+            f"generate_ast: stopped early at token {end_idx}/{len(tokens)}: {bad!r}"
+        )
         if bad == ")":
             raise SyntaxError("Unexpected closing parenthesis")
         if bad == ",":
             raise SyntaxError("Unexpected comma")
         raise SyntaxError(f"Unexpected token: {bad!r}")
     ast = ast if len(ast) != 1 else ast[0]
+    print_debug(f"generate_ast: produced ast type={type(ast).__name__}")
     return ast
 
 
@@ -265,6 +333,11 @@ def infix_to_postfix(ast):
 
         if len(node) > 1 and isinstance(node[1], str) and node[1] in INFIX_OPERATIONS:
             items = node
+
+            print_debug(
+                "infix_to_postfix: parsing infix list, "
+                + f"items={_preview_sequence(items, max_items=24)}"
+            )
 
             i = 0
 
@@ -315,6 +388,9 @@ def infix_to_postfix(ast):
             result = parse_expr(0)
             if i != len(items):
                 leftover = " ".join(str(x) for x in items[i:])
+                print_debug(
+                    f"infix_to_postfix: leftover tokens after parse: {leftover!r}"
+                )
                 raise SyntaxError(
                     f"Could not fully parse expression, leftover tokens: {leftover}"
                 )
@@ -375,7 +451,7 @@ def ast_sort_key(x):
         length = expr_length(x) if isinstance(x, list) else (0 if is_const else 9999)
     except Exception:
         length = 9999
-    s = json.dumps(x, sort_keys=False, default=str)
+    s = stable_serialize(x)
     return (0 if is_const else 1, length, s)
 
 
@@ -539,12 +615,31 @@ def substitute_vars(tokens, subst_vars):
         return tokens
 
 
-def parse_expression(tokens, subst_vars, functions, line_num):
+def parse_expression(tokens, subst_vars, functions, line_num, progress_cb=None):
     _validate_balanced_parentheses(tokens, line_num=line_num)
-    # print("Parsing expression:", tokens)
+
+    if line_num is not None:
+        print_verbose(f"line {line_num}: parsing expression")
+    print_debug(f"parse_expression: raw tokens={_preview_sequence(tokens, max_items=32)}")
+
+    if progress_cb is not None:
+        try:
+            progress_cb(None, "substituting vars")
+        except Exception:
+            pass
     result = substitute_vars(tokens, subst_vars)
+
+    print_debug(
+        "parse_expression: after substitution tokens="
+        + _preview_sequence(result, max_items=32)
+    )
     # print("After substitution:", result)
     try:
+        if progress_cb is not None:
+            try:
+                progress_cb(None, "generating ast")
+            except Exception:
+                pass
         ast = generate_ast(result)
     except SyntaxError as e:
         msg = str(e).strip()
@@ -560,6 +655,11 @@ def parse_expression(tokens, subst_vars, functions, line_num):
         raise SyntaxError(msg)
 
     try:
+        if progress_cb is not None:
+            try:
+                progress_cb(None, "infix to postfix")
+            except Exception:
+                pass
         ast = infix_to_postfix(ast)
     except IndexError:
         msg = "Malformed expression"
@@ -572,10 +672,23 @@ def parse_expression(tokens, subst_vars, functions, line_num):
             msg = f"Line {line_num}: {msg}"
         raise SyntaxError(msg) from None
 
+    print_debug(f"parse_expression: postfix ast type={type(ast).__name__}")
+
     # print("Postfix AST:", ast)
+    if progress_cb is not None:
+        try:
+            progress_cb(None, "expanding expression")
+        except Exception:
+            pass
     expr = expand_expression(ast)
+    print_debug(f"parse_expression: expanded ast type={type(expr).__name__}")
     # print("Expanded AST:", expr)
     try:
+        if progress_cb is not None:
+            try:
+                progress_cb(None, "expanding functions")
+            except Exception:
+                pass
         expr = expand_functions(expr, functions)
     except Exception as e:
         msg = str(e).strip()
@@ -584,7 +697,13 @@ def parse_expression(tokens, subst_vars, functions, line_num):
         raise type(e)(msg) from None
     # print("After function expansion:", expr)
 
+    if progress_cb is not None:
+        try:
+            progress_cb(None, "normalizing")
+        except Exception:
+            pass
     expr = normalize_ast(expr)
+    print_debug(f"parse_expression: normalized ast type={type(expr).__name__}")
     # print("Normalized AST:", expr, "\n")
     return expr
 
@@ -600,9 +719,17 @@ def parse_function(
     *,
     line_nums: list[int] | None = None,
     header_line_num: int | None = None,
+    progress_cb=None,
 ):
     local_scope = subst_vars.copy()
     for line_no, tokens in enumerate(func_tokens):
+        if progress_cb is not None:
+            try:
+                progress_cb(
+                    None, f"function body line {line_no + 1}/{len(func_tokens)}"
+                )
+            except Exception:
+                pass
         statement_line_num = (
             line_nums[line_no]
             if (line_nums is not None and line_no < len(line_nums))
@@ -616,7 +743,11 @@ def parse_function(
                 line_num=statement_line_num,
             )
             local_scope[tokens[0]] = parse_expression(
-                tokens[2:], local_scope, functions, statement_line_num
+                tokens[2:],
+                local_scope,
+                functions,
+                statement_line_num,
+                progress_cb=progress_cb,
             )
         elif len(tokens) > 1 and tokens[1] == ":=":
             var_name = tokens[0]
@@ -644,7 +775,11 @@ def parse_function(
         elif tokens and tokens[0] == "return":
             expr_tokens = tokens[1:]
             expr = parse_expression(
-                expr_tokens, local_scope, functions, statement_line_num
+                expr_tokens,
+                local_scope,
+                functions,
+                statement_line_num,
+                progress_cb=progress_cb,
             )
             expr = fix_structure(expr)
             _validate_no_undefined_identifiers(
@@ -681,6 +816,7 @@ def parse_repeat(
     output_state=None,
     line_nums: list[int] | None = None,
     header_line_num: int | None = None,
+    progress_cb=None,
 ):
     if outer_bindings is None:
         outer_bindings = {}
@@ -723,6 +859,11 @@ def parse_repeat(
         raise ValueError(msg) from None
 
     for itr in range(total_iterations):
+        if progress_cb is not None:
+            try:
+                progress_cb(None, f"iteration {itr + 1}/{total_iterations}")
+            except Exception:
+                pass
         itr_bindings = (
             outer_bindings
             if repeat_var is None
@@ -749,7 +890,11 @@ def parse_repeat(
                     line_num=statement_line_num,
                 )
                 subst_vars[tokens[0]] = parse_expression(
-                    tokens[2:], subst_vars | itr_bindings, functions, statement_line_num
+                    tokens[2:],
+                    subst_vars | itr_bindings,
+                    functions,
+                    statement_line_num,
+                    progress_cb=progress_cb,
                 )
                 line_no += 1
                 continue
@@ -817,6 +962,7 @@ def parse_repeat(
                         output_state=output_state,
                         line_nums=nested_line_nums,
                         header_line_num=statement_line_num,
+                        progress_cb=progress_cb,
                     )
                 )
 
@@ -847,6 +993,7 @@ def parse_repeat(
                     subst_vars | itr_bindings,
                     functions,
                     statement_line_num,
+                    progress_cb=progress_cb,
                 )
                 expr = fix_structure(expr)
 
@@ -877,7 +1024,9 @@ def parse_repeat(
     return results
 
 
-def parse_pm3_to_ast(code):
+def parse_pm3_to_ast(code, *, progress: bool = False):
+    print_verbose(f"starting parse_pm3_to_ast: {len(code)} lines")
+    print_debug(f"parse_pm3_to_ast: progress={progress}")
     config = ProgramConfig()
     subst_vars = {}
 
@@ -888,17 +1037,82 @@ def parse_pm3_to_ast(code):
 
     funcs = []
     compiled = []
-    for line_num, line in enumerate(code, start=1):
+
+    iterator = enumerate(code, start=1)
+    bar = None
+    if progress:
+        try:
+            from tqdm import tqdm  # type: ignore
+        except Exception:
+            tqdm = None
+
+        total = len(code) if hasattr(code, "__len__") else None
+        if tqdm is not None:
+            bar = tqdm(iterator, total=total, desc="pm3", unit="line")
+            iterator = bar
+
+    current_stage = "scanning"
+    current_substage = None
+    current_preview = None
+
+    def _render_postfix() -> str:
+        parts = []
+        if current_substage:
+            parts.append(str(current_substage))
+        if current_preview:
+            parts.append(str(current_preview))
+        return " | ".join(parts)
+
+    def progress_update(stage=None, substage=None):
+        nonlocal current_stage, current_substage
+        if bar is None:
+            return
+
+        changed = False
+        if stage is not None and stage != current_stage:
+            current_stage = stage
+            try:
+                bar.set_description_str(f"pm3 - {current_stage}")
+            except Exception:
+                pass
+            changed = True
+
+        if substage is not None and substage != current_substage:
+            current_substage = substage
+            changed = True
+
+        if changed:
+            try:
+                bar.set_postfix_str(_render_postfix())
+            except Exception:
+                pass
+
+    for line_num, line in iterator:
+        if bar is not None:
+            try:
+                preview = line.split("#", 1)[0].strip()
+                if len(preview) > 60:
+                    preview = preview[:57] + "..."
+                current_preview = f"L{line_num}: {preview}"
+                bar.set_postfix_str(_render_postfix())
+            except Exception:
+                pass
+
         line = line.split("#", 1)[0].rstrip()
         if not line:
             continue
 
         tokens = tokenize(line)
+        print_debug(
+            f"scan line {line_num}: head tokens={_preview_sequence(tokens, max_items=24)}"
+        )
         # print(line, tokens)
 
         if collecting_function:
             if not tokens[0] == "__TAB__":
                 collecting_function = False
+                progress_update(f"parsing function {function_name}", "parsing body")
+                print_verbose(f"parsing function '{function_name}'")
                 current_function.body = parse_function(
                     function_tokens,
                     function_body,
@@ -909,8 +1123,12 @@ def parse_pm3_to_ast(code):
                     config.variables,
                     line_nums=function_line_nums,
                     header_line_num=function_header_line_num,
+                    progress_cb=progress_update,
                 )
                 funcs.append(current_function)
+                print_verbose(
+                    f"registered function '{function_name}' (params={len(current_function.params)})"
+                )
             else:
                 function_body.append(line[4:])
                 function_tokens.append(tokens[1:])
@@ -920,6 +1138,8 @@ def parse_pm3_to_ast(code):
         if collecting_loop:
             if not tokens[0] == "__TAB__":
                 collecting_loop = False
+                progress_update("unwrapping repeat", "parsing body")
+                print_verbose("unwrapping repeat")
                 repeat_result = parse_repeat(
                     repeat_tokens,
                     repeat_body,
@@ -932,9 +1152,11 @@ def parse_pm3_to_ast(code):
                     output_state=output_state,
                     line_nums=repeat_line_nums,
                     header_line_num=repeat_header_line_num,
+                    progress_cb=progress_update,
                 )
                 compiled.extend(repeat_result)
                 config.output = output_state["output"]
+                print_verbose(f"repeat produced {len(repeat_result)} outputs")
             else:
                 repeat_body.append(line[4:])
                 repeat_tokens.append(tokens[1:])
@@ -956,6 +1178,8 @@ def parse_pm3_to_ast(code):
                 function_tokens = []
                 function_line_nums = []
                 function_name = tokens[1]
+                progress_update(f"collecting function {function_name}", "reading body")
+                print_verbose(f"collecting function '{function_name}'")
                 params = tokens[2:]
                 current_function = FunctionDef(
                     name=function_name, params=params, body=[]
@@ -963,6 +1187,8 @@ def parse_pm3_to_ast(code):
                 function_header_line_num = line_num
             elif tokens[0] == "repeat":
                 collecting_loop = True
+                progress_update("collecting repeat", "reading body")
+                print_verbose("collecting repeat")
                 repeat_body = []
                 repeat_tokens = []
                 repeat_line_nums = []
@@ -971,16 +1197,20 @@ def parse_pm3_to_ast(code):
                 repeat_header_line_num = line_num
 
             elif tokens[0] == "out":
+                progress_update("parsing main body", "output selection")
                 output = tokens[1]
                 if output in config.variables:
                     config.output = output
                     output_state["output"] = output
+                    print_verbose(f"selected output variable: {output}")
                 else:
                     raise ValueError(
                         f"Line {line_num}: Output variable {output!r} not declared in variables"
                     )
 
             elif tokens[0] == "return":
+                progress_update("parsing main body", "parsing return")
+                print_verbose(f"compiling return expression (line {line_num})")
                 if config.precision is None:
                     raise ValueError(
                         f"Line {line_num}: Precision must be set before return statement"
@@ -990,7 +1220,13 @@ def parse_pm3_to_ast(code):
                         f"Line {line_num}: Epsilon must be set before return statement"
                     )
                 expr_tokens = tokens[1:]
-                expr = parse_expression(expr_tokens, subst_vars, funcs, line_num)
+                expr = parse_expression(
+                    expr_tokens,
+                    subst_vars,
+                    funcs,
+                    line_num,
+                    progress_cb=progress_update,
+                )
                 expr = fix_structure(expr)
 
                 _validate_no_undefined_identifiers(
@@ -1007,9 +1243,12 @@ def parse_pm3_to_ast(code):
                 )
                 config.output = None
                 output_state["output"] = None
+                print_verbose(f"return compiled: total outputs now {len(compiled)}")
 
             elif tokens[0] == "//":
                 if not collecting_function and not collecting_loop:
+                    progress_update("parsing config", "pragma")
+                    print_verbose(f"parsing pragma (line {line_num})")
                     try:
                         parse_pragma(line.strip()[2:].strip(), config)
                     except Exception as e:
@@ -1025,6 +1264,7 @@ def parse_pm3_to_ast(code):
             else:
                 # non-function, non-pragma line
                 if len(tokens) > 1 and tokens[1] == "=":
+                    progress_update("parsing main body", "substitution")
                     _raise_if_conflicts_with_declared_variables(
                         tokens[0],
                         config.variables,
@@ -1032,8 +1272,12 @@ def parse_pm3_to_ast(code):
                         line_num=line_num,
                     )
                     subst_vars[tokens[0]] = tokens[2:]
+                    print_debug(
+                        f"substitution set: {tokens[0]!r} = {tokens[2:]!r}"
+                    )
                 elif len(tokens) > 1 and tokens[1] == ":=":
                     # python eval!
+                    progress_update("parsing main body", "python eval")
                     var_name = tokens[0]
                     _raise_if_conflicts_with_declared_variables(
                         var_name,
@@ -1054,12 +1298,16 @@ def parse_pm3_to_ast(code):
                             f"Line {line_num}: Python eval failed: {e}"
                         ) from None
                     subst_vars[var_name] = [str(result)]
+                    print_debug(
+                        f"python eval set: {var_name!r} = {str(result)!r}"
+                    )
                 else:
                     raise SyntaxError(
                         f"Line {line_num}: Unknown statement: {' '.join(tokens)}"
                     )
 
     if collecting_function:
+        progress_update(f"parsing function {function_name}", "parsing body")
         current_function.body = parse_function(
             function_tokens,
             function_body,
@@ -1070,10 +1318,12 @@ def parse_pm3_to_ast(code):
             config.variables,
             line_nums=function_line_nums,
             header_line_num=function_header_line_num,
+            progress_cb=progress_update,
         )
         funcs.append(current_function)
 
     if collecting_loop:
+        progress_update("unwrapping repeat", "parsing body")
         repeat_result = parse_repeat(
             repeat_tokens,
             repeat_body,
@@ -1086,6 +1336,7 @@ def parse_pm3_to_ast(code):
             output_state=output_state,
             line_nums=repeat_line_nums,
             header_line_num=repeat_header_line_num,
+            progress_cb=progress_update,
         )
         compiled.extend(repeat_result)
         config.output = output_state["output"]
@@ -1094,9 +1345,20 @@ def parse_pm3_to_ast(code):
     # print(subst_vars)
     # print(funcs)
 
+    progress_update("finalizing", "fixing structure")
+    print_verbose(
+        f"finalizing: {len(compiled)} compiled outputs, {len(funcs)} functions"
+    )
     output = []
     for i, item in enumerate(compiled):
         output.append(fix_structure(item))
+
+    if bar is not None:
+        try:
+            bar.set_postfix_str("done")
+            bar.close()
+        except Exception:
+            pass
 
     return compiled, config
 
@@ -1259,7 +1521,7 @@ def find_beneficial_duplicates(ast, min_length: int = 4, min_savings: int = -999
         return []
 
     for sub in all_sublists(ast):
-        key = json.dumps(sub, sort_keys=False, default=str)
+        key = stable_serialize(sub)
         seen.setdefault(key, {"count": 0, "obj": sub})
         seen[key]["count"] += 1
 
@@ -1294,7 +1556,6 @@ def _normalize_for_sympy(expr: str) -> str:
         .replace("arccos", "acos")
         .replace("arctan", "atan")
         .replace("abs(", "Abs(")
-        .replace("euler", "E")
     )
 
 
@@ -1305,7 +1566,6 @@ def _denormalize_from_sympy(expr: str) -> str:
         .replace("atan", "arctan")
         .replace("Abs", "abs")
     )
-    expr = re.sub(r"\bE\b", "euler", expr)
     return expr
 
 
@@ -1325,6 +1585,12 @@ def _sympy_simplify_worker(task: tuple[int, str]) -> tuple[int, str]:
         out = _denormalize_from_sympy(out)
         out = _format_expression(out)
         return index, out
+    except ImportError:
+        # let me be silly for an error message nobody's ever gonna get
+        raise ImportError(
+            "hi! i dont know what happened but you somehow passed the earlier sympy check, but sympy doesnt import.\n"
+            "perhaps your install is fauly? qwq 3: i literally have NO idea how you got here"
+        )
     except Exception:
         return index, expr_str
 
@@ -1334,6 +1600,10 @@ def simplify_sympy_multicore(
 ) -> list[str]:
     if not expressions:
         return []
+
+    print_verbose(
+        f"sympy: simplifying {len(expressions)} expression(s) (multicore={len(expressions) > 1})"
+    )
 
     try:
         from tqdm import tqdm
@@ -1348,7 +1618,8 @@ def simplify_sympy_multicore(
         results[idx] = simplified
         return results
 
-    max_workers = max(1, min(len(tasks), os.cpu_count() or 1))
+    max_workers = max(1, min(len(tasks), SYMPY_WORKERS))
+    print_debug(f"sympy: using {max_workers} worker(s)")
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(_sympy_simplify_worker, task) for task in tasks]
@@ -1364,13 +1635,40 @@ def simplify_sympy_multicore(
     return results
 
 
-if __name__ == "__main__":
-    with open("mockup.pm3") as f:
-        code = [line.rstrip() for line in f.readlines() if line]
-        asts, config = parse_pm3_to_ast(code)
+def process_asts(asts, *, progress: bool = False):
+    print_verbose(f"processing {len(asts)} AST output(s)")
+    bar = None
+    iterator = enumerate(asts)
+    if progress:
+        try:
+            from tqdm import tqdm  # type: ignore
+        except Exception:
+            tqdm = None
+        if tqdm is not None:
+            bar = tqdm(total=len(asts), desc="pm3 - processing", unit="ast")
+
+    def progress_stage(stage: str | None = None):
+        if bar is None:
+            return
+        if stage is None:
+            return
+        try:
+            bar.set_postfix_str(stage)
+        except Exception:
+            pass
+
+    try:
         outputs_ast = []
-        for i, output in enumerate(asts):
+        for i, output in iterator:
+            progress_stage("building outputs")
+
+            if output.output is None:
+                print_debug(f"process_asts[{i}]: output variable is None")
+            else:
+                print_debug(f"process_asts[{i}]: output={output.output!r}")
+
             if output.config.simplify:
+                progress_stage("simplifying")
                 output.ast = simplify_ast(output.ast, output.config)
                 line = AstOutput(
                     output=output.output, ast=output.ast, sympy=output.config.sympy
@@ -1382,6 +1680,10 @@ if __name__ == "__main__":
                 )
 
             if output.config.dupe:
+                progress_stage("deduping")
+                print_debug(
+                    f"process_asts[{i}]: dedupe enabled (min_savings={output.config.dupe_min_savings})"
+                )
                 for extraction, variable in extract_subexpressions(
                     line.ast,
                     line.output,
@@ -1395,7 +1697,18 @@ if __name__ == "__main__":
             else:
                 outputs_ast.append(line)
 
-        if sympy_jobs := sum(ast.sympy for ast in outputs_ast):
+            if bar is not None:
+                try:
+                    bar.update(1)
+                except Exception:
+                    pass
+
+        exprs = [generate_expression(item.ast) for item in outputs_ast]
+        print_verbose(f"generated {len(exprs)} expression string(s)")
+
+        if sum(item.sympy for item in outputs_ast):
+            progress_stage("sympy")
+            print_verbose("sympy enabled for some outputs")
             try:
                 import sympy
             except ImportError:
@@ -1403,18 +1716,36 @@ if __name__ == "__main__":
                     "SymPy is required for sympy output. Please install it via 'pip install sympy'."
                 ) from None
 
-        exprs = [generate_expression(item.ast) for item in outputs_ast]
-
-        if sympy_jobs:
             sympy_indexes = [i for i, item in enumerate(outputs_ast) if item.sympy]
             sympy_exprs = [exprs[i] for i in sympy_indexes]
             simplified_sympy_exprs = simplify_sympy_multicore(
-                sympy_exprs, show_progress=True
+                sympy_exprs, show_progress=progress
             )
             for i, simplified in zip(sympy_indexes, simplified_sympy_exprs):
                 exprs[i] = simplified
 
         outputs = [(item.output, exprs[i]) for i, item in enumerate(outputs_ast)]
+        print_verbose("processing complete")
+        return outputs
+    finally:
+        if bar is not None:
+            try:
+                bar.set_postfix_str("done")
+                bar.close()
+            except Exception:
+                pass
+
+
+def check_python_eval(code):
+    check = [(i + 1, line) for i, line in enumerate(code) if ":=" in line]
+    return check
+
+
+if __name__ == "__main__":
+    with open("mockup.pm3") as f:
+        code = [line.rstrip() for line in f.readlines() if line]
+        asts, config = parse_pm3_to_ast(code, progress=True)
+        outputs = process_asts(asts, progress=True)
 
         with open("math.txt", "w") as f:
             for output, expr in outputs:

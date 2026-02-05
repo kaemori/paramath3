@@ -2,9 +2,9 @@
 //epsilon 1e-99
 //variables a b c d e f x y z m
 
-//dupe true
+//dupe true -999
 //simplify false
-//sympy true
+//sympy false
 
 python_var := len("rawr")
 var = 69 + 1
@@ -21,10 +21,13 @@ return 20 + 2 / 10 / 2
 out d
 return (a + 20) ** (20 + a)
 
-# //sympy true
+return euler * 3
+
 out m
 return sin(x) ** 2 + cos(x) ** 2
-# //sympy false
+
+repeat 2
+    return 20
 
 # return 20 / mod(7, 8)
 # return var + python_var + dependent  # output to display
