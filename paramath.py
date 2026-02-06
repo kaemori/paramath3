@@ -259,9 +259,7 @@ def tokenize(line):
 def generate_ast(tokens):
     tokens = [t for t in tokens if t and t != "\n"]
 
-    print_debug(
-        f"generate_ast: {len(tokens)} tokens, head={_preview_sequence(tokens)}"
-    )
+    print_debug(f"generate_ast: {len(tokens)} tokens, head={_preview_sequence(tokens)}")
 
     def parse_expr(idx):
         result = []
@@ -620,7 +618,9 @@ def parse_expression(tokens, subst_vars, functions, line_num, progress_cb=None):
 
     if line_num is not None:
         print_verbose(f"line {line_num}: parsing expression")
-    print_debug(f"parse_expression: raw tokens={_preview_sequence(tokens, max_items=32)}")
+    print_debug(
+        f"parse_expression: raw tokens={_preview_sequence(tokens, max_items=32)}"
+    )
 
     if progress_cb is not None:
         try:
@@ -633,7 +633,7 @@ def parse_expression(tokens, subst_vars, functions, line_num, progress_cb=None):
         "parse_expression: after substitution tokens="
         + _preview_sequence(result, max_items=32)
     )
-    # print("After substitution:", result)
+    print_verbose("After substitution: " + str(result))
     try:
         if progress_cb is not None:
             try:
@@ -646,7 +646,7 @@ def parse_expression(tokens, subst_vars, functions, line_num, progress_cb=None):
         if line_num is not None and not msg.lower().startswith("line "):
             msg = f"Line {line_num}: {msg}"
         raise SyntaxError(msg) from None
-    # print("Generated AST:", ast)
+    print_verbose("Generated AST: " + str(ast))
 
     if len(ast) == 0:
         msg = "Empty expression"
@@ -674,7 +674,7 @@ def parse_expression(tokens, subst_vars, functions, line_num, progress_cb=None):
 
     print_debug(f"parse_expression: postfix ast type={type(ast).__name__}")
 
-    # print("Postfix AST:", ast)
+    print_verbose("Postfix AST: " + str(ast))
     if progress_cb is not None:
         try:
             progress_cb(None, "expanding expression")
@@ -682,7 +682,7 @@ def parse_expression(tokens, subst_vars, functions, line_num, progress_cb=None):
             pass
     expr = expand_expression(ast)
     print_debug(f"parse_expression: expanded ast type={type(expr).__name__}")
-    # print("Expanded AST:", expr)
+    print_verbose("Expanded AST: " + str(expr))
     try:
         if progress_cb is not None:
             try:
@@ -695,7 +695,7 @@ def parse_expression(tokens, subst_vars, functions, line_num, progress_cb=None):
         if line_num is not None and not msg.lower().startswith("line "):
             msg = f"Line {line_num}: {msg}"
         raise type(e)(msg) from None
-    # print("After function expansion:", expr)
+    print_verbose("After function expansion: " + str(expr))
 
     if progress_cb is not None:
         try:
@@ -704,7 +704,7 @@ def parse_expression(tokens, subst_vars, functions, line_num, progress_cb=None):
             pass
     expr = normalize_ast(expr)
     print_debug(f"parse_expression: normalized ast type={type(expr).__name__}")
-    # print("Normalized AST:", expr, "\n")
+    print_verbose("Normalized AST: " + str(expr))
     return expr
 
 
@@ -1272,9 +1272,7 @@ def parse_pm3_to_ast(code, *, progress: bool = False):
                         line_num=line_num,
                     )
                     subst_vars[tokens[0]] = tokens[2:]
-                    print_debug(
-                        f"substitution set: {tokens[0]!r} = {tokens[2:]!r}"
-                    )
+                    print_debug(f"substitution set: {tokens[0]!r} = {tokens[2:]!r}")
                 elif len(tokens) > 1 and tokens[1] == ":=":
                     # python eval!
                     progress_update("parsing main body", "python eval")
@@ -1298,9 +1296,7 @@ def parse_pm3_to_ast(code, *, progress: bool = False):
                             f"Line {line_num}: Python eval failed: {e}"
                         ) from None
                     subst_vars[var_name] = [str(result)]
-                    print_debug(
-                        f"python eval set: {var_name!r} = {str(result)!r}"
-                    )
+                    print_debug(f"python eval set: {var_name!r} = {str(result)!r}")
                 else:
                     raise SyntaxError(
                         f"Line {line_num}: Unknown statement: {' '.join(tokens)}"
@@ -1341,9 +1337,9 @@ def parse_pm3_to_ast(code, *, progress: bool = False):
         compiled.extend(repeat_result)
         config.output = output_state["output"]
 
-    # print(config)
-    # print(subst_vars)
-    # print(funcs)
+    print_debug(f"config: {config}")
+    print_debug(f"subst_vars: {subst_vars}")
+    print_debug(f"funcs: {funcs}")
 
     progress_update("finalizing", "fixing structure")
     print_verbose(
