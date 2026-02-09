@@ -26,8 +26,8 @@ return euler * 3
 out m
 return sin(x) ** 2 + cos(x) ** 2
 
-repeat 2
-    return 20lmkahsdkmsh  # testing
+# repeat 2
+    # return 20lmkahsdkmsh  # testing
 
 # return 20 / mod(7, 8)
 # return var + python_var + dependent  # output to display

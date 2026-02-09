@@ -9,10 +9,6 @@ euler * 3
 to m:
 sin(x) ** 2 + cos(x) ** 2
 to None:
-20lmkahsdkmsh
-to None:
-20lmkahsdkmsh
-to None:
 4 * 2 + 3 + 3
 to None:
 4 * 3 * 3 + 2
