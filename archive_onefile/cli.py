@@ -22,16 +22,16 @@ from colors import colors
 
 import_colors_time = time.time() - last_time
 last_time = time.time()
-from pm3 import (
+from paramath import (
     parse_pm3_to_ast,
     process_asts,
     check_python_eval,
     print_debug,
     print_verbose,
 )
-import pm3.logging as pm3_logging
+import paramath
 
-import_pm3_time = time.time() - last_time
+import_paramath_time = time.time() - last_time
 
 PROGRAM_VERSION = "3.0.12"
 
@@ -199,15 +199,15 @@ examples:
         raise ValueError("Progress bar cannot be used with verbose or debug modes")
 
     if verbose:
-        pm3_logging.VERBOSE = True
+        paramath.VERBOSE = True
         print_verbose("verbose logging enabled")
 
     if debug:
-        pm3_logging.DEBUG = True
+        paramath.DEBUG = True
         print_debug("debug logging enabled")
 
     if logfile:
-        pm3_logging.LOGFILE = logfile
+        paramath.LOGFILE = logfile
         print_verbose(f'Logging to file: "{logfile}"')
         with open(logfile, "w") as f:
             f.write(
@@ -237,7 +237,7 @@ examples:
     print_debug(f"Import argparse time: {import_argparse_time*1000:.6f}ms")
     print_debug(f"Import sys time: {import_sys_time*1000:.6f}ms")
     print_debug(f"Import colors time: {import_colors_time*1000:.6f}ms")
-    print_debug(f"Import pm3 time: {import_pm3_time*1000:.6f}ms")
+    print_debug(f"Import paramath time: {import_paramath_time*1000:.6f}ms")
     print_debug(f"Init finished: {(time.time() - time_start)*1000:.6f}ms")
 
     try:

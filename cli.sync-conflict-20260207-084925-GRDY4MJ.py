@@ -1,37 +1,26 @@
 #!/usr/bin/env python3
+import os
 import time
 
 time_start = time.time()
-import os
-
-import_os_time = time.time() - time_start
-last_time = time.time()
-import builtins
-
-import_builtins_time = time.time() - last_time
-last_time = time.time()
 import argparse
 
-import_argparse_time = time.time() - last_time
-last_time = time.time()
+import_argparse_time = time.time() - time_start
 import sys
 
-import_sys_time = time.time() - last_time
-last_time = time.time()
 from colors import colors
 
-import_colors_time = time.time() - last_time
-last_time = time.time()
-from pm3 import (
+import_sys_time = time.time() - time_start - import_argparse_time
+from paramath import (
     parse_pm3_to_ast,
     process_asts,
     check_python_eval,
     print_debug,
     print_verbose,
 )
-import pm3.logging as pm3_logging
+import paramath
 
-import_pm3_time = time.time() - last_time
+import_paramath_time = time.time() - time_start - import_argparse_time - import_sys_time
 
 PROGRAM_VERSION = "3.0.12"
 
@@ -94,10 +83,8 @@ def main():
 examples:
   paramath3 testfile.pm
   paramath3 testfile.pm -dv
-  paramath3 testfile.pm -sL output.log
+  paramath3 testfile.pm -L output.log
   paramath3 testfile.pm -dvL debug.log
-  paramath3 testfile.pm -tmo compiled.txt -O
-  paramath3 testfile.pm -mtpo compiled.txt
         """,
     )
 
@@ -148,11 +135,7 @@ examples:
         help="enable unsafe code execution (default: disabled) (WARNING: may be dangerous! use at your own risk!)",
     )
     parser.add_argument(
-        "-L",
-        "--logfile",
-        required=False,
-        metavar="FILE",
-        help="write logs from verbose or debug to FILE",
+        "-L", "--logfile", required=False, metavar="FILE", help="write logs to FILE"
     )
     parser.add_argument(
         "-p",
@@ -179,11 +162,9 @@ examples:
     print_output = args.print_output
     input_file = args.filepath
 
-    old_print = None
     if args.silent:
         # just monkeypatch print to do nothing
-        old_print = builtins.print
-        builtins.print = lambda *a, **k: None
+        print = lambda *a, **k: None
 
     print(_title(f"Paramath v{PROGRAM_VERSION}") + "\n")
 
@@ -199,15 +180,15 @@ examples:
         raise ValueError("Progress bar cannot be used with verbose or debug modes")
 
     if verbose:
-        pm3_logging.VERBOSE = True
+        paramath.VERBOSE = True
         print_verbose("verbose logging enabled")
 
     if debug:
-        pm3_logging.DEBUG = True
+        paramath.DEBUG = True
         print_debug("debug logging enabled")
 
     if logfile:
-        pm3_logging.LOGFILE = logfile
+        paramath.LOGFILE = logfile
         print_verbose(f'Logging to file: "{logfile}"')
         with open(logfile, "w") as f:
             f.write(
@@ -232,12 +213,9 @@ examples:
         )
     )
 
-    print_debug(f"Import os time: {import_os_time*1000:.6f}ms")
-    print_debug(f"Import builtins time: {import_builtins_time*1000:.6f}ms")
     print_debug(f"Import argparse time: {import_argparse_time*1000:.6f}ms")
     print_debug(f"Import sys time: {import_sys_time*1000:.6f}ms")
-    print_debug(f"Import colors time: {import_colors_time*1000:.6f}ms")
-    print_debug(f"Import pm3 time: {import_pm3_time*1000:.6f}ms")
+    print_debug(f"Import paramath time: {import_paramath_time*1000:.6f}ms")
     print_debug(f"Init finished: {(time.time() - time_start)*1000:.6f}ms")
 
     try:
@@ -256,9 +234,6 @@ examples:
                 )
                 python_eval = check_python_eval(code)
                 if python_eval:
-                    if old_print is not None:
-                        builtins.print = old_print
-
                     print(_err("The following Python code was found in the script:"))
                     for line_no, line in python_eval:
                         print(_err(f"Line {line_no}:") + f' "{line}"')
@@ -299,8 +274,6 @@ examples:
         print(_dim("Output written to ") + _path(f'"{output_file}"'))
 
     except FileNotFoundError:
-        if old_print is not None:
-            builtins.print = old_print
         print(_err("=== Compilation failed! ==="))
         print(
             _err("Error:")
@@ -309,10 +282,7 @@ examples:
             + _path(f'"{input_file}"')
             + _dim(" not found!")
         )
-
     except Exception as e:
-        if old_print is not None:
-            builtins.print = old_print
         print(_err("=== Compilation failed! ==="))
         print(_err("Error:") + " " + str(e))
 

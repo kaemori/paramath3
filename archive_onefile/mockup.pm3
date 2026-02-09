@@ -27,12 +27,12 @@ out m
 return sin(x) ** 2 + cos(x) ** 2
 
 repeat 2
-    return 20lmkahsdkmsh  # testing
+    return 20
 
 # return 20 / mod(7, 8)
 # return var + python_var + dependent  # output to display
 
-# return max0(vr) == !(var >= 2)
+# return max0(var) == !(var >= 2)
 # return if(a==0, a, 0)
 
 return 3 + 3 + 4 * 2
