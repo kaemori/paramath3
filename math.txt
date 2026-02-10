@@ -9,7 +9,9 @@ euler * 3
 to m:
 sin(x) ** 2 + cos(x) ** 2
 to None:
-arctan(6)
+20
+to None:
+20
 to None:
 4 * 2 + 3 + 3
 to None:

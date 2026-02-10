@@ -183,10 +183,10 @@ class ProgramConfig:
     precision: int = None
     epsilon: float = None
     variables: list = None
-    dupe: bool = None
+    dupe: bool = True
     dupe_min_savings: int = 0
-    simplify: bool = None
-    sympy: bool = None
+    simplify: bool = True
+    sympy: bool = False
     output: str = None
 
     def __post_init__(self):
@@ -604,13 +604,50 @@ def _validate_no_undefined_identifiers(
     walk(ast)
 
 
-def substitute_vars(tokens, subst_vars):
+def substitute_vars(tokens, subst_vars, _stack=None):
+    if _stack is None:
+        _stack = set()
+
     if isinstance(tokens, list):
-        return [substitute_vars(token, subst_vars) for token in tokens]
-    elif tokens in subst_vars:
-        return subst_vars[tokens]
-    else:
-        return tokens
+        out = []
+        for token in tokens:
+            replaced = substitute_vars(token, subst_vars, _stack)
+
+            # If we're substituting into a token stream, we want to splice in
+            # *token lists* (e.g. ['sin','(','x',')']) but keep AST nodes
+            # (e.g. ['*','a','2']) as a single atomic item.
+            if isinstance(replaced, list):
+                if len(replaced) == 1 and not isinstance(replaced[0], list):
+                    out.append(replaced[0])
+                    continue
+
+                has_paren_or_comma = any(
+                    isinstance(x, str) and x in {"(", ")", ","} for x in replaced
+                )
+                has_infix_in_non_head = any(
+                    isinstance(x, str) and x in INFIX_OPERATIONS for x in replaced[1:]
+                )
+
+                if has_paren_or_comma or has_infix_in_non_head:
+                    out.extend(substitute_vars(replaced, subst_vars, _stack))
+                else:
+                    out.append(replaced)
+                continue
+
+            out.append(replaced)
+
+        return out
+
+    if tokens in subst_vars:
+        if tokens in _stack:
+            raise ValueError(f"Recursive substitution detected for {tokens!r}")
+        _stack.add(tokens)
+        try:
+            return substitute_vars(subst_vars[tokens], subst_vars, _stack)
+        finally:
+            _stack.remove(tokens)
+
+    return tokens
 
 
 def parse_expression(tokens, subst_vars, functions, line_num, progress_cb=None):
@@ -849,9 +886,66 @@ def parse_repeat(
             token_list = token_list[1:]
         return token_list
 
+    def _coerce_repeat_times_to_int(times_value, *, line_num: int | None):
+        if isinstance(times_value, bool):
+            msg = "Repetition count must be an integer"
+            if line_num is not None:
+                msg = f"Line {line_num}: {msg}"
+            raise ValueError(msg)
+
+        if isinstance(times_value, int):
+            return times_value
+
+        if isinstance(times_value, float):
+            if times_value.is_integer():
+                return int(times_value)
+            msg = "Repetition count must be an integer"
+            if line_num is not None:
+                msg = f"Line {line_num}: {msg}"
+            raise ValueError(msg)
+
+        if isinstance(times_value, str):
+            try:
+                f = float(times_value)
+            except Exception:
+                msg = "Repetition count must be a constant integer expression"
+                if line_num is not None:
+                    msg = f"Line {line_num}: {msg}"
+                raise ValueError(msg) from None
+            if f.is_integer():
+                return int(f)
+            msg = "Repetition count must be an integer"
+            if line_num is not None:
+                msg = f"Line {line_num}: {msg}"
+            raise ValueError(msg) from None
+
+        msg = "Repetition count must be a constant integer expression"
+        if line_num is not None:
+            msg = f"Line {line_num}: {msg}"
+        raise ValueError(msg)
+
     results = []
     try:
-        total_iterations = num(times)
+        if config.precision is None:
+            raise ValueError("Precision must be set before repeat statement")
+        if config.epsilon is None:
+            raise ValueError("Epsilon must be set before repeat statement")
+
+        times_tokens = times if isinstance(times, list) else [times]
+        times_ast = parse_expression(
+            times_tokens,
+            subst_vars | outer_bindings,
+            functions,
+            header_line_num,
+            progress_cb=progress_cb,
+        )
+        simplified = simplify_literals_ast(times_ast, config)
+        if isinstance(simplified, list):
+            raise ValueError("Repetition count must be a constant integer expression")
+
+        total_iterations = _coerce_repeat_times_to_int(
+            simplified, line_num=header_line_num
+        )
     except Exception as e:
         msg = str(e).strip()
         if header_line_num is not None and not msg.lower().startswith("line "):
@@ -931,8 +1025,18 @@ def parse_repeat(
                         msg = f"Line {statement_line_num}: {msg}"
                     raise SyntaxError(msg)
 
-                nested_times = tokens[1]
-                nested_repeat_var = tokens[2] if len(tokens) >= 3 else None
+                # Legacy form: repeat <times> <var>
+                # If there are more than 3 tokens, treat everything after 'repeat' as the times expression.
+                if (
+                    len(tokens) == 3
+                    and isinstance(tokens[2], str)
+                    and tokens[2].isidentifier()
+                ):
+                    nested_times = tokens[1]
+                    nested_repeat_var = tokens[2]
+                else:
+                    nested_times = tokens[1:]
+                    nested_repeat_var = None
 
                 nested_body_tokens = []
                 nested_body_lines = []
@@ -1192,8 +1296,18 @@ def parse_pm3_to_ast(code, *, progress: bool = False):
                 repeat_body = []
                 repeat_tokens = []
                 repeat_line_nums = []
-                repeat_times = tokens[1]
-                repeat_var = tokens[2] if len(tokens) >= 3 else None
+                # Legacy form: repeat <times> <var>
+                # Otherwise: repeat <times expression...>
+                if (
+                    len(tokens) == 3
+                    and isinstance(tokens[2], str)
+                    and tokens[2].isidentifier()
+                ):
+                    repeat_times = tokens[1]
+                    repeat_var = tokens[2]
+                else:
+                    repeat_times = tokens[1:]
+                    repeat_var = None
                 repeat_header_line_num = line_num
 
             elif tokens[0] == "out":
@@ -1420,7 +1534,10 @@ def simplify_literals_ast(ast, config):
             }
             result = eval(expr_str, eval_namespace)
             if isinstance(result, float):
-                result = round(result, config.precision)
+                if result.is_integer():
+                    result = int(result)
+                else:
+                    result = round(result, config.precision)
             return result
         else:
             return simplified
@@ -1430,54 +1547,125 @@ def simplify_literals_ast(ast, config):
 
 def simplify_algebratic_identities(ast):
     if isinstance(ast, list):
+        simplified_children = [ast[0]] + [
+            simplify_algebratic_identities(child) for child in ast[1:]
+        ]
+        ast = simplified_children
+
         if ast[0] == "*":
             if len(ast) == 3:
                 if ast[1] == 0 or ast[2] == 0:
                     return 0
                 if ast[1] == 1:
-                    return simplify_algebratic_identities(ast[2])
+                    return ast[2]
                 if ast[2] == 1:
-                    return simplify_algebratic_identities(ast[1])
+                    return ast[1]
                 if ast[1] == -1:
-                    return ["-", simplify_algebratic_identities(ast[2])]
+                    return ["-", ast[2]]
                 if ast[2] == -1:
-                    return ["-", simplify_algebratic_identities(ast[1])]
+                    return ["-", ast[1]]
                 if ast[1] == ast[2]:
-                    return ["**", simplify_algebratic_identities(ast[1]), 2]
+                    return ["**", ast[1], 2]
+                if isinstance(ast[2], list) and ast[2][0] == "+":
+                    return ["+", ["*", ast[1], ast[2][1]], ["*", ast[1], ast[2][2]]]
+                if isinstance(ast[1], list) and ast[1][0] == "+":
+                    return ["+", ["*", ast[1][1], ast[2]], ["*", ast[1][2], ast[2]]]
+                if (
+                    isinstance(ast[1], list)
+                    and ast[1][0] == "**"
+                    and isinstance(ast[2], list)
+                    and ast[2][0] == "**"
+                ):
+                    if ast[1][1] == ast[2][1]:
+                        return ["**", ast[1][1], ["+", ast[1][2], ast[2][2]]]
+                if (
+                    isinstance(ast[2], list)
+                    and ast[2][0] == "**"
+                    and ast[1] == ast[2][1]
+                ):
+                    return ["**", ast[1], ["+", ast[2][2], 1]]
+                if (
+                    isinstance(ast[1], list)
+                    and ast[1][0] == "**"
+                    and ast[2] == ast[1][1]
+                ):
+                    return ["**", ast[2], ["+", ast[1][2], 1]]
+
         if ast[0] == "+":
             if len(ast) == 3:
                 if ast[1] == 0:
-                    return simplify_algebratic_identities(ast[2])
+                    return ast[2]
                 if ast[2] == 0:
-                    return simplify_algebratic_identities(ast[1])
-                if ast[1] == ["-", simplify_algebratic_identities(ast[2])]:
-                    return 0
-                if ast[2] == ["-", simplify_algebratic_identities(ast[1])]:
-                    return 0
+                    return ast[1]
+                if isinstance(ast[1], list) and ast[1][0] == "-" and len(ast[1]) == 2:
+                    if ast[1][1] == ast[2]:
+                        return 0
+                if isinstance(ast[2], list) and ast[2][0] == "-" and len(ast[2]) == 2:
+                    if ast[2][1] == ast[1]:
+                        return 0
                 if ast[1] == ast[2]:
-                    return ["*", 2, simplify_algebratic_identities(ast[1])]
+                    return ["*", 2, ast[1]]
+
         if ast[0] == "-":
+            if len(ast) == 2:
+                if ast[1] == 0:
+                    return 0
+                if isinstance(ast[1], list) and ast[1][0] == "-" and len(ast[1]) == 2:
+                    return ast[1][1]
+                if isinstance(ast[1], list) and ast[1][0] == "*" and ast[1][1] == -1:
+                    return ast[1][2]
+                if isinstance(ast[1], list) and ast[1][0] == "*" and ast[1][2] == -1:
+                    return ast[1][1]
             if len(ast) == 3:
                 if ast[2] == 0:
-                    return simplify_algebratic_identities(ast[1])
+                    return ast[1]
+                if ast[1] == 0:
+                    return ["-", ast[2]]
                 if ast[1] == ast[2]:
                     return 0
+
         if ast[0] == "/":
             if len(ast) == 3:
                 if ast[1] == 0:
                     return 0
                 if ast[2] == 1:
-                    return simplify_algebratic_identities(ast[1])
+                    return ast[1]
                 if ast[1] == ast[2]:
                     return 1
+                if ast[2] == 0:
+                    raise ZeroDivisionError("division by zero found in simplification")
+                if isinstance(ast[1], list) and ast[1][0] == "*":
+                    if ast[1][1] == ast[2]:
+                        return ast[1][2]
+                    if ast[1][2] == ast[2]:
+                        return ast[1][1]
+                if (
+                    isinstance(ast[1], list)
+                    and ast[1][0] == "**"
+                    and isinstance(ast[2], list)
+                    and ast[2][0] == "**"
+                ):
+                    if ast[1][1] == ast[2][1]:
+                        return ["**", ast[1][1], ["-", ast[1][2], ast[2][2]]]
+                if (
+                    isinstance(ast[2], list)
+                    and ast[2][0] == "**"
+                    and ast[1] == ast[2][1]
+                ):
+                    return ["**", ast[1], ["-", 1, ast[2][2]]]
+
         if ast[0] == "**":
             if len(ast) == 3:
-                if ast[1] == 0 and ast[2] != 0:
-                    return 0
                 if ast[2] == 0:
                     return 1
                 if ast[2] == 1:
-                    return simplify_algebratic_identities(ast[1])
+                    return ast[1]
+                if ast[1] == 0 and ast[2] != 0:
+                    return 0
+                if ast[1] == 1:
+                    return 1
+                if isinstance(ast[1], list) and ast[1][0] == "**":
+                    return ["**", ast[1][1], ["*", ast[1][2], ast[2]]]
 
         return ast
 

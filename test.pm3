@@ -1,0 +1,20 @@
+//precision 0
+//epsilon 1e-99
+
+base = 1
+
+def double a
+    return a * 2
+
+root = double(1)
+
+def square a
+    return a ** 2
+
+size = square(root) + 2
+
+return size
+
+repeat size
+    out none 
+    return x + 1

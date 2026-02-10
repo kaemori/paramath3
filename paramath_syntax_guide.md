@@ -103,8 +103,8 @@ length := len("hello world")  # Note the use of ':=' for Python eval
 radius = 5
 area := vars.radius ** 2 * pi
 
-# In loops with //local, reference loop-scoped variables
-//repeat 5 i
+# In loops, reference loop-scoped variables
+repeat 5 i
   squared = vars.i ** 2
   doubled = vars.squared + vars.i
   return squared + doubled
@@ -115,6 +115,7 @@ area := vars.radius ** 2 * pi
 - All math functions: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `arcsin`, `arccos`, `arctan`, `abs`, `pi`, `e`
 - Built-in functions: `len()`, `str()`, `int()`, `float()`, etc.
 - Access to substitutions via `vars.SUBSTITUTION_NAME`
+    - Note that the substitution you put in a Python evaluation statement will get compiled literally. This means if your substitution contains an undefined variable (e.g. runtime variables defined in `//variables`), the compiler will raise an error.
 
 **Important Notes:**
 
@@ -360,92 +361,27 @@ Default variable names: `a`, `b`, `c`, `d`, `e`, `f`, `x`, `y`, `m`
 ### Syntax
 
 ```scheme
-//def function_name $param1 $param2 ...
-//ret (function body)
+def function_name param1 param2 ...
+    <any substitutions, optional>
+    return <final expression to return>
 ```
 
-- Function names are case-insensitive
-- Parameters must start with `$`
-- Body must end with with `//ret` (return directive)
+- Function names are case-sensitive
+- Body must end with with `return` (return directive)
 
 ### Examples
 
 ```scheme
-//def square $x
-//ret (* $x $x)
+def square x
+    return x * x
 
-//def distance $x1 $y1 $x2 $y2
-//ret (** (+ (** (- $x2 $x1) 2) (** (- $y2 $y1) 2)) 0.5)
+def distance x1 y1 x2 y2
+    return sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
-//display
-//ret (distance 0 0 3 4)  # Returns 5.0
+return distance(0, 0, 3, 4)  # Returns 5.0
 ```
 
 > **Note:** Recursion is strictly prohibited; This is because functions are unwrapped at compile time, and it will unwrap until Python raises a `RecursionError` error.
-
----
-
-## Lambda Expressions
-
-Anonymous functions for one-time use.
-
-### Syntax
-
-```scheme
-((lambda ($param1 $param2 ...) body) arg1 arg2 ...)
-```
-
-### Examples
-
-```scheme
-# Simple lambda
-((lambda ($x) (* $x $x)) 5)  # Returns 25
-
-# Multiple parameters
-((lambda ($x $y) (+ $x $y)) 3 4)  # Returns 7
-
-# Nested lambdas
-((lambda ($f $x) ($f ($f $x)))
- (lambda ($y) (* $y 2))
- 5)  # Returns 20 (doubles 5 twice)
-```
-
-### Lambda Rules
-
-- Must be immediately applied (no storing lambdas)
-- Parameters must start with `$`
-- Body is a single expression (no `//ret` needed!)
-
-> **Note:** I mainly added this feature as a joke and a tribute to lisp. This has no practical use cases whatever, but feel free to use it!
-
-### Lambda Assignments with Walrus Operator
-
-You can assign lambdas to variables for reuse **within the same code block** using the `:=` (walrus) operator:
-
-```scheme
-//display
-double := (lambda ($x) (* $x 2))
-triple := (lambda ($x) (* $x 3))
-
-//ret (+ (double 5) (triple 5))  # Returns 25 (10 + 15)
-```
-
-**How It Works:**
-
-- Lambdas are stored as **lambda intermediates** using `:=` instead of `=`
-- They can be called like regular functions in the same code block
-- Each lambda call gets expanded and substituted at compile time
-
-**Example with Nested Lambdas:**
-
-```scheme
-//display
-compose := (lambda ($f $g $x) ($f ($g $x)))
-add_one := (lambda ($n) (+ $n 1))
-double := (lambda ($n) (* $n 2))
-
-//ret (compose double add_one 5)  # ((double (add_one 5))) = 12
-```
 
 ---
 
@@ -454,23 +390,22 @@ double := (lambda ($n) (* $n 2))
 ### Basic Loop Syntax
 
 ```scheme
-//repeat count_expression
-  # Loop body
-//endrepeat
+repeat count_expression [iterator_variable, optional]
+    <loop body>
+    return <expression to return per iteration>
 ```
+
+Note that it is possible to have multiple return statements in the loop body; each will generate a separate output expression per iteration.
 
 > **Note:** Loops are **unrolled at compile time** - the loop body is copied `count` times with substitutions.
 
 ### Simple Loop
 
 ```scheme
-//global SIZE 3
+size = 3
 
-//display
-//repeat globals.SIZE
-   //display
-   //ret (+ x 1)
-//endrepeat
+repeat size
+    return x + 1
 ```
 
 This generates 3 separate expressions, each computing `(+ x 1)`.
