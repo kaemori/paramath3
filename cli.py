@@ -43,7 +43,6 @@ def _supports_color(stream) -> bool:
 
 
 def _cli_color_enabled() -> bool:
-    # allow user to force-disable without waiting for argparse
     if "--no-color" in sys.argv:
         return False
     return _supports_color(sys.stdout)
@@ -127,7 +126,10 @@ examples:
         "-v", "--verbose", action="store_true", help="enable verbose output"
     )
     parser.add_argument(
-        "-s", "--silent", action="store_true", help="suppress all output"
+        "-s", "--suppress", action="store_true", help="suppress non-error output"
+    )
+    parser.add_argument(
+        "-S", "--silent", action="store_true", help="suppress ALL output"
     )
     parser.add_argument(
         "-O",
@@ -180,9 +182,11 @@ examples:
     input_file = args.filepath
 
     old_print = None
-    if args.silent:
+    if args.suppress or args.silent:
         # just monkeypatch print to do nothing
         old_print = builtins.print
+        if args.silent:
+            old_print = lambda *a, **k: None
         builtins.print = lambda *a, **k: None
 
     print(_title(f"Paramath v{PROGRAM_VERSION}") + "\n")

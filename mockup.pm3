@@ -35,6 +35,8 @@ return sin(x) ** 2 + cos(x) ** 2
 # return max0(vr) == !(var >= 2)
 # return if(a==0, a, 0)
 
+return arctan(6)
+
 return 3 + 3 + 4 * 2
 return 3 * 3 * 4 + 2
 # return better_mod(7, 3)

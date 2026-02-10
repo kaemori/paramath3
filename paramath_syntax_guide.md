@@ -1,4 +1,4 @@
-# Paramath Language Specification v2.2.6
+# Paramath Language Specification v3.0.12
 
 _A differentiable programming language for continuous computation_
 
@@ -6,23 +6,7 @@ _A differentiable programming language for continuous computation_
 
 ## Table of Contents
 
-1. [Introduction](#introduction)
-2. [Syntax Overview](#syntax-overview)
-3. [Data Types](#data-types)
-4. [Operators and Functions](#operators-and-functions)
-5. [Program Structure](#program-structure)
-6. [Pragmas and Directives](#pragmas-and-directives)
-7. [Function Definitions](#function-definitions)
-8. [Lambda Expressions](#lambda-expressions)
-9. [Loops and Iteration](#loops-and-iteration)
-10. [Intermediates and Code Blocks](#intermediates-and-code-blocks)
-11. [Advanced Features](#advanced-features)
-12. [Complete Examples](#complete-examples)
-13. [Command-Line Interface](#command-line-interface)
-14. [Error Reference](#error-reference)
-15. [Best Practices](#best-practices)
-
----
+-yti
 
 ## Introduction
 
@@ -33,21 +17,31 @@ _A differentiable programming language for continuous computation_
 
 ### Key Features
 
-- **S-expression syntax**: Clean, unambiguous structure
-- **Automatic optimization**: Duplicate detection and subexpression extraction
+- **Infix and prefix syntax**: Unlike Paramath v2, v3 allows infix for mathematical operations, and prefix for everything else
+- **Automatic optimization**: Duplicate expression optimization, algebratic identity simplification
 - **Loop unrolling**: Compile-time iteration for performance
+- **Functions**: Functions to easily apply repeated mathematical statements
+- **Substutions**: Unlike Paramath v2, v3 does not use globals and locals. Instead, v3 uses variable substitutions, which makes code cleaner and easier to understand
 - **Flexible output**: Display or store results in variables
-
----
+- **Simple CLI**: Improved CLI experience compared to Paramath v2
+- **Better performance**: What else to say? Better performance compared to Paramath v2
 
 ## Syntax Overview
 
 ### Basic Structure
 
-Paramath uses **S-expressions** (symbolic expressions) similar to Lisp:
+Paramath uses both **Infix** and **prefix**, similar to most languages.
+
+Arithmetic operations and the compararator functions are infix. The full list of infix operators are: `==`, `!=`, `>`, `<`, `>=`, `<=`, `+`, `-`, `*`, `/`, `**`
 
 ```scheme
-(operator operand1 operand2 ...)
+(operand1 operator operand2)
+```
+
+Other functions (both builtins and user-defined) are prefix. This means the operator is outside the operands.
+
+```scheme
+operator(operand1, ...)
 ```
 
 ### Comments
@@ -56,7 +50,7 @@ Comments start with `#` and continue to the end of the line:
 
 ```scheme
 # This is a comment
-(+ 2 3)  # This adds 2 and 3
+2 + 3  # This adds 2 and 3
 ```
 
 ### Variables
@@ -64,7 +58,7 @@ Comments start with `#` and continue to the end of the line:
 Reserved variable names (case-insensitive):
 
 - Single letters: `a`, `b`, `c`, `d`, `e`, `f`, `x`, `y`, `m`
-- Special: `ans` (previous result), `pi`, `e`
+- Special: `ans` (previous result), `pi`, `euler`
 
 > **Note on `ans`:** The `ans` variable stores the result of the last computed expression. When using `//store X`, the value goes to both `X` and `ans`. However, when `//dupe true` is enabled (default), the compiler may create intermediate variables that make `ans` behave unpredictably—prefer using named intermediates instead!
 
@@ -81,76 +75,52 @@ Reserved variable names (case-insensitive):
 2.5e-3    # Scientific notation (preferred for small numbers!)
 ```
 
-### Constants
+### Substitutions
 
-Define constants using `//global` anywhere in your program:
+Define substitutions using the `=` token:
 
 ```scheme
-//global MEANING 42
-//global GOLDEN_RATIO (/ (+ 1 (** 5 0.5)) 2)
+meaning = 42
+golden_ratio = (1 + sqrt(5)) / 2
 ```
 
-Constants can reference other previously defined constants:
+Substitutions can reference other previously defined substitutions:
 
 ```scheme
-//global RADIUS 5
-//global AREA (* pi (** RADIUS 2)
-```
-
-You can also set precision for individual constants:
-
-```scheme
-//precision 4
-//global PI_APPROX pi  # Evaluates pi to 4 decimal places
-
-//precision 10
-//global E_PRECISE e   # Evaluates e to 10 decimal places
+radius = 5
+area = radius ** 2 * pi
 ```
 
 ### Python Expression Evaluation
 
-Both `//global` and `//local` support evaluating Python expressions! This lets you compute values using Python's standard library and previously defined globals/locals:
+Substitutions support evaluating Python expressions! This lets you compute values using Python's standard library and previously defined substitutions:
 
 ```scheme
 # Simple arithmetic (evaluated as Python)
-//global LENGTH len("hello world")
+length := len("hello world")  # Note the use of ':=' for Python eval
 
 # Reference previously defined globals
-//global RADIUS 5
-//global AREA (globals.RADIUS ** 2 * 3.14159)
+radius = 5
+area := vars.radius ** 2 * pi
 
 # In loops with //local, reference loop-scoped variables
 //repeat 5 i
-  //local squared locals.i ** 2
-  //local doubled globals.LENGTH + i
-  //ret (+ squared doubled)
-//endrepeat
+  squared = vars.i ** 2
+  doubled = vars.squared + vars.i
+  return squared + doubled
 ```
 
 **Available Python Functions:**
 
 - All math functions: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `arcsin`, `arccos`, `arctan`, `abs`, `pi`, `e`
 - Built-in functions: `len()`, `str()`, `int()`, `float()`, etc.
-- Access to `globals` and `locals` as special namespaces
+- Access to substitutions via `vars.SUBSTITUTION_NAME`
 
 **Important Notes:**
 
-- Access globals with `globals.VARIABLE_NAME` (NOT `global.VARIABLE_NAME`)
-- Access locals with `locals.VARIABLE_NAME` (NOT `local.VARIABLE_NAME`)
+- Access substitutions with `vars.VARIABLE_NAME` (NOT `var.VARIABLE_NAME`)
 - Evaluate to numeric values that can be used in expressions
-
-### Aliases
-
-Create alternative names for variables:
-
-```scheme
-//alias input x        # "input" now refers to x
-//alias output y       # "output" now refers to y
-//alias theta a        # "theta" now refers to a
-
-//display
-//ret (sin theta)      # Uses variable a
-```
+- Use `:=` (walrus operator) for Python evaluation assignments
 
 ---
 
@@ -158,19 +128,15 @@ Create alternative names for variables:
 
 ### Basic Arithmetic
 
-| Operator | Description    | Example          |
-| -------- | -------------- | ---------------- |
-| `+`      | Addition       | `(+ 2 3)` → 5    |
-| `-`      | Subtraction    | `(- 10 3)` → 7   |
-| `*`      | Multiplication | `(* 4 5)` → 20   |
-| `/`      | Division       | `(/ 10 2)` → 5   |
-| `**`     | Exponentiation | `(** 2 8)` → 256 |
+| Operator | Description    | Example        |
+| -------- | -------------- | -------------- |
+| `+`      | Addition       | `2 + 3` → 5    |
+| `-`      | Subtraction    | `10 - 3` → 7   |
+| `*`      | Multiplication | `4 * 5` → 20   |
+| `/`      | Division       | `10 / 2` → 5   |
+| `**`     | Exponentiation | `2 ** 8` → 256 |
 
-> **Note:** `+` and `*` support multiple arguments and are right-associative:
->
-> ```scheme
-> (+ 1 2 3 4)  # Expands to (+ 1 (+ 2 (+ 3 4)))
-> ```
+> **Note:** Paramath uses standard operator precedence. Use parentheses to enforce specific evaluation order.
 
 ### Trigonometric Functions
 
@@ -187,52 +153,56 @@ Create alternative names for variables:
 Example:
 
 ```scheme
-(sin (* pi (/ x 2)))  # sin(πx/2)
+sin(pi * (x / 2))  # sin(πx/2)
 ```
 
 ### Logical Operations
 
 All logical operations are continuous approximations that depend on epsilon:
 
-| Operation     | Syntax     | Description                       |
-| ------------- | ---------- | --------------------------------- |
-| Equality      | `(== a b)` | Returns ~1 when a≈b, ~0 otherwise |
-| Equal to zero | `(=0 a)`   | Returns ~1 when a≈0, ~0 otherwise |
-| Greater than  | `(> a b)`  | Returns ~1 when a>b, ~0 otherwise |
-| Greater/equal | `(>= a b)` | Returns ~1 when a≥b, ~0 otherwise |
-| Less than     | `(< a b)`  | Returns ~1 when a<b, ~0 otherwise |
-| Less/equal    | `(<= a b)` | Returns ~1 when a≤b, ~0 otherwise |
-| Logical not   | `(! a)`    | Returns 1-a                       |
+| Operation     | Syntax   | Description                       |
+| ------------- | -------- | --------------------------------- |
+| Equality      | `a == b` | Returns ~1 when a≈b, ~0 otherwise |
+| Equal to zero | `=0(a)`  | Returns ~1 when a≈0, ~0 otherwise |
+| Greater than  | `a > b`  | Returns ~1 when a>b, ~0 otherwise |
+| Greater/equal | `a >= b` | Returns ~1 when a≥b, ~0 otherwise |
+| Less than     | `a < b`  | Returns ~1 when a<b, ~0 otherwise |
+| Less/equal    | `a <= b` | Returns ~1 when a≤b, ~0 otherwise |
+| Logical not   | `!(a)`   | Returns 1-a                       |
 
 > **Tip:** The smaller your epsilon, the sharper these comparisons become. Recommended: `1e-99` for maximum sharpness.
+> **Note:** These logical operations return continuous values between 0 and 1 proportional to the set `epsilon`, not strict booleans. Excersize caution when using them in if statements or such! **Do also note that** `=0` and `!` are functions, not operators, and thus are prefix functions that require parentheses.
 
 ### Mathematical Operations
 
-| Operation | Syntax      | Description                                      |
-| --------- | ----------- | ------------------------------------------------ |
-| Sign      | `(sign a)`  | Returns -1, 0, or 1 (continuous)                 |
-| Max       | `(max a b)` | Maximum of a and b                               |
-| Min       | `(min a b)` | Minimum of a and b                               |
-| Max0      | `(max0 a)`  | Maximum of a and 0                               |
-| Min0      | `(min0 a)`  | Minimum of a and 0                               |
-| Modulo    | `(mod a b)` | a modulo b                                       |
-| Fraction  | `(frac a)`  | Fractional part of a                             |
-| Floor     | `(floor a)` | Floor of a                                       |
-| Ceiling   | `(ceil a)`  | Ceiling of a                                     |
-| Natural   | `(nat a)`   | Rounds a to nearest integer (rounds down at 0.5) |
+| Operation | Syntax      | Description                      |
+| --------- | ----------- | -------------------------------- |
+| Sign      | `sign(a)`   | Returns -1, 0, or 1 (continuous) |
+| Max       | `max(a, b)` | Maximum of a and b               |
+| Min       | `min(a, b)` | Minimum of a and b               |
+| Max0      | `max0(a)`   | Maximum of a and 0               |
+| Min0      | `min0(a)`   | Minimum of a and 0               |
+| Modulo    | `mod(a, b)` | a modulo b                       |
+| Fraction  | `frac(a)`   | Fractional part of a             |
+| Natural   | `nat(a)`    | Rounds a to nearest integer      |
+
+> **Note:** These functions return continuous values proportional to the set `epsilon`.
 
 ### Conditional Operations
 
 ```scheme
-(if condition then_value else_value)
+if(condition then_value else_value)
 ```
+
+> **Note:** There are no checks to see if the condition are strictly 0 or 1, or even outside of the range. Use with caution! **Do note that** `if` is a function, not an operator, and thus is a prefix function that requires parentheses.
 
 Example:
 
 ```scheme
-(if (== 0 (mod x 2))
-    (/ x 2)
-    (+ (* 3 x) 1))  # Collatz conjecture!
+if(mod(x, 2) == 0,
+    x / 2,
+    3 * x + 1
+)  # Collatz conjecture!
 ```
 
 ---
@@ -241,28 +211,22 @@ Example:
 
 A Paramath program consists of:
 
-1. **Aliases** (optional): Alternative variable names
-2. **Configuration** (optional): Precision, epsilon, optimization settings
-3. **Globals** (optional): Named constant definitions
-4. **Functions** (optional): User-defined functions
-5. **Code blocks**: Computation blocks with output directives
+1. **Configuration**: Precision, epsilon, optimization settings
+2. **Substitutions** (optional): Named substitutions for reuse
+3. **Code blocks**: Computation blocks with output directives
 
 ### Minimal Program
 
 ```scheme
-//display
-//ret (+ 2 2)
+return 2 + 2
 ```
-
-> **Note:** The final surrounding parentheses are not necessarily needed if you're using a single-line string, but if any error occurs, surrounding the expression with parentheses usually resolves it.)
 
 ### Complete Program Structure
 
 ```scheme
-# Aliases
-//alias r x
-
 # Configuration
+//variables a b c d e f x y z m
+
 //precision 6
 //epsilon 1e-99
 //simplify true
@@ -270,15 +234,14 @@ A Paramath program consists of:
 //sympy false
 
 # Constants
-//global RADIUS 5
+radius = 5
 
 # Functions
-//def circle_area $r
-//ret (* pi (* $r $r))
+def circle_area(r):
+    return pi * r * r
 
 # Computation
-//display
-//ret (circle_area RADIUS)
+return circle_area(radius)
 ```
 
 ---
@@ -293,17 +256,17 @@ Can appear anywhere and affect subsequent code:
 
 #### `//precision`
 
-Sets decimal precision for constant evaluation:
+Sets decimal precision for python evaluation:
 
 ```scheme
 //precision 4
-//global PI_LOW pi  # Evaluates to 4 decimals
+pi_low := pi  # Evaluates to 4 decimals
 
 //precision 10
-//global PI_HIGH pi  # Evaluates to 10 decimals
+pi_high := pi  # Evaluates to 10 decimals
 ```
 
-> **Note:** `pi` is calculated using python's math module, which provides up to 15 accurate significant decimals, and reaches 17 decimal places. If a higher precision is needed, creating a custom `//global PI_ACCURATE` would be the most elegant solution. Note that using `pi` as a variable instead is also recommended, as the compiler assumes the `pi` variable instead of the literal on the calculator, resulting in less characters in the final output (e.g. ` (* 4 pi)` instead of `(* 4 3.1415926535)`)
+> **Note:** `pi` is calculated using python's math module, which provides up to 15 accurate significant decimals, and reaches 17 decimal places. If a higher precision is needed, creating a custom `PI_ACCURATE` substitution would be the most elegant solution. Note that using `pi` as a variable instead is also recommended, as the compiler assumes the `pi` variable on the calculator instead of the literal, resulting in less characters in the final output (e.g. `4 * pi` instead of `4 * 3.1415926535`)
 
 #### `//epsilon`
 
@@ -318,19 +281,19 @@ Sets the epsilon parameter for logical operations:
 
 #### `//variables`
 
-Sets the letter variables that the compiler recognizes and accepts. Note that the variables `ans`, `pi`, and `e` cannot be changed.
+Sets the letter variables that the compiler recognizes and accepts. Note that the variables `ans`, `pi`, and `euler` cannot be changed.
 
 ```scheme
 //variables a b c d e f x y z m  # Default
-//variables m n o p q
+//variables m n o p q  # Note that this overwrites previous variable configuration
 ```
 
 #### `//simplify`
 
-Enables/disables compile-time simplification of literal expressions:
+Enables/disables compile-time simplification of literal expressions and algebraic identities:
 
 ```scheme
-//simplify true   # Default: simplifies (+ 2 3) to 5 at compile time
+//simplify true   # Default: simplifies 2 + 3 to 5 at compile time
 //simplify false  # Keeps all expressions as-is
 ```
 
@@ -357,29 +320,35 @@ Enables/disables using Sympy to simplify the math expression:
 
 > **Warning:** This option is not extensively tested, and thus is more or less experimental. To use it, you must first have SymPy installed, otherwise the compiler will crash.
 
-### Output Directives
+### Outputting
 
-Every code block must have an output directive:
+#### `return`
 
-#### `//display`
+Outputs are specified with the use of the `return` token at the start of the code block you want to output.
+
+```scheme
+return 2
+```
+
+Output directives (symbolized by the `out` token) appear at the start of code blocks to specify which variable (defined in `variables`) will receive the output. If not provided, the compiler simply outputs the result without storing it (e.g. only to `ans`).
+
+#### `No directive`
 
 Output result to console:
 
 ```scheme
-//display
-//ret (+ 2 3)
+return 2 + 3
 ```
 
-#### `//store`
+#### `out`
 
 Store result in a variable:
 
 ```scheme
-//store x
-//ret (+ 2 3)
+out x
+return 2 + 3
 
-//display
-//ret (* x 2)  # Uses stored value
+return x * 2  # Uses stored value
 ```
 
 Default variable names: `a`, `b`, `c`, `d`, `e`, `f`, `x`, `y`, `m`
@@ -1069,7 +1038,7 @@ identifier     ::= (alpha | "_") (alpha | digit | "_")*
 
 Paramath is an evolving language. Contributions and feedback are welcome!
 
-**Version**: 2.2.6
+**Version**: 2.2.5
 **License**: MIT  
 **GitHub**: https://github.com/kaemori/paramath
 
