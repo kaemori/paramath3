@@ -11,11 +11,19 @@ LOGFILE = None
 OPERATION_EXPANSIONS = {
     "==": lambda a, b, eps: [
         "/",
+        eps,
+        ["+", ["abs", ["-", a, b]], eps],
+    ],
+    "!=": lambda a, b, eps: [
+        "/",
         ["abs", ["-", a, b]],
         ["+", ["abs", ["-", a, b]], eps],
     ],
-    "!=": lambda a, b, eps: ["-", 1, ["==", a, b]],
-    "=0": lambda a, eps: ["/", ["abs", a], ["+", ["abs", a], eps]],
+    "=0": lambda a, eps: [
+        "/",
+        eps,
+        ["+", ["abs", a], eps],
+    ],
     ">": lambda a, b, eps: [
         "/",
         ["+", ["-", a, b], ["abs", ["-", a, b]]],
