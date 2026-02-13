@@ -1,20 +1,24 @@
-//precision 0
+//precision 2
 //epsilon 1e-99
+//variables x y z
 
-base = 1
+//simplify true
 
-def double a
-    return a * 2
+a = 3
+b = -7
+c = 2
 
-root = double(1)
+discriminant = b ** 2 - 4 * a * c
 
-def square a
-    return a ** 2
+return discriminant < 0
+return discriminant == 0
+return discriminant > 0
 
-size = square(root) + 2
+sqrt_disc = discriminant ** 0.5
+numerator = -b + sqrt_disc
+neg_numerator = -b - sqrt_disc
+denominator = 2 * a
+return numerator / denominator
+return neg_numerator / denominator
 
-return size
-
-repeat size
-    out none 
-    return x + 1
+return =0(2-2)

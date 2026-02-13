@@ -1,20 +1,12 @@
-to c:
-2 / 10 / 2 + 20
-to ans:
-a + 20
-to d:
-ans ** ans
 to None:
-euler * 3
-to m:
-sin(x) ** 2 + cos(x) ** 2
+0
 to None:
-20
+1
 to None:
-20
+1
 to None:
-4 * 2 + 3 + 3
+2
 to None:
-4 * 3 * 3 + 2
+0.33
 to None:
-2 ** 2
+0

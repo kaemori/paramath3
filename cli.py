@@ -322,7 +322,11 @@ examples:
             builtins.print = old_print
         print(_err("=== Compilation failed! ==="))
         print(_err("Error:") + " " + str(e))
-        print(_dim(f"If this is an error in the compiler,\n{traceback.format_exc()}."))
+        print(
+            _dim(
+                f"If this is an error in the compiler,\n{traceback.format_exception_only(type(e), e)[0].strip()}."
+            )
+        )
 
 
 if __name__ == "__main__":

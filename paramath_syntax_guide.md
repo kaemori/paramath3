@@ -415,10 +415,8 @@ This generates 3 separate expressions, each computing `(+ x 1)`.
 ### Loops with Iterator Variable
 
 ```scheme
-//repeat 5 i
-  //display
-  //ret (* i i)
-//endrepeat
+repeat 5 i
+    return i ** 2
 ```
 
 The iterator `i` takes values 0, 1, 2, 3, 4 in each unrolled iteration.
@@ -428,13 +426,9 @@ The iterator `i` takes values 0, 1, 2, 3, 4 in each unrolled iteration.
 Use `//local` to define variables that only exist within the loop:
 
 ```scheme
-//display
-//repeat 3 i
-  //local square (* i i)
-
-  //display
-  //ret (+ square 1)
-//endrepeat
+repeat 3 i
+    square = i ** 2
+    return square + 1
 ```
 
 Each iteration gets its own `square` variable with the correct value.
@@ -444,25 +438,20 @@ Each iteration gets its own `square` variable with the correct value.
 Loops can be nested:
 
 ```scheme
-//display
-//repeat 3 i
-  //repeat 3 j
-    //ret (+ (* i 10) j)
-  //endrepeat
-//endrepeat
+repeat 3 i
+    repeat 3 j
+        return i * 10 + j
 ```
 
 ### Advanced Loop Example
 
 ```scheme
-//global N 10
+N = 10
 
-//display
-//repeat globals.N i
-  //local x_val (+ i 1)
-  //local y_val (* x_val x_val)
-  //ret (/ y_val x_val)
-//endrepeat
+repeat N i
+    x_val = i + 1
+    y_val = x_val ** 2
+    return y_val / x_val
 ```
 
 ---
@@ -474,14 +463,13 @@ Loops can be nested:
 Instead of nested parentheses hell, you can break expressions into named parts:
 
 ```scheme
-//display
-a = (** x 2)
-b = (** y 2)
-c = (+ a b)
-//ret (** c 0.5)
+a = x ** 2
+b = y ** 2
+c = a + b
+return c ** 0.5
 ```
 
-This is **much** cleaner than `(** (+ (** x 2) (** y 2)) 0.5)`!
+This is **much** cleaner than `sqrt(x ** 2 + y ** 2)`!
 
 ### Naming Rules
 
@@ -496,13 +484,12 @@ This is **much** cleaner than `(** (+ (** x 2) (** y 2)) 0.5)`!
 ### Complex Example
 
 ```scheme
-//display
 # Compute quadratic formula
-discriminant = (- (** b 2) (* 4 (* a c)))
-sqrt_disc = (** discriminant 0.5)
-numerator = (+ (* -1 b) sqrt_disc)
-denominator = (* 2 a)
-//ret (/ numerator denominator)
+discriminant = b ** 2 - 4 * a * c
+sqrt_disc = discriminant ** 0.5
+numerator = (-1 * b) + sqrt_disc
+denominator = 2 * a
+return numerator / denominator
 ```
 
 ### Automatic Expansion

@@ -234,6 +234,11 @@ def fix_structure(ast):
 def tokenize(line):
     special_tokens = {"    ": "TAB", "\t": "TAB"}
     multi_char_ops = [key for key in INFIX_OPERATIONS if len(key) > 1]
+    multi_char_ops += [
+        key
+        for key in OPERATION_EXPANSIONS
+        if len(key) > 1 and not key.isidentifier() and key not in multi_char_ops
+    ]
     multi_char_ops += [":=", "//", "**"]
 
     for token, replacement in special_tokens.items():
@@ -261,6 +266,11 @@ def generate_ast(tokens):
 
     print_debug(f"generate_ast: {len(tokens)} tokens, head={_preview_sequence(tokens)}")
 
+    def is_callable_token(token) -> bool:
+        return isinstance(token, str) and (
+            token.isidentifier() or token in OPERATION_EXPANSIONS
+        )
+
     def parse_expr(idx):
         result = []
         i = idx
@@ -275,8 +285,7 @@ def generate_ast(tokens):
             elif (
                 i + 1 < len(tokens)
                 and tokens[i + 1] == "("
-                and isinstance(token, str)
-                and token.isidentifier()
+                and is_callable_token(token)
             ):
                 func_name = token
                 args = []
@@ -329,7 +338,19 @@ def infix_to_postfix(ast):
         if not node:
             return node
 
-        if len(node) > 1 and isinstance(node[1], str) and node[1] in INFIX_OPERATIONS:
+        is_func_call = (
+            len(node) >= 2
+            and isinstance(node[0], str)
+            and node[0].isidentifier()
+            and not is_op(node[0])
+        )
+
+        has_top_level_infix = any(is_op(tok) for tok in node)
+
+        if len(node) > 1 and (
+            (isinstance(node[1], str) and node[1] in INFIX_OPERATIONS)
+            or (not is_func_call and has_top_level_infix)
+        ):
             items = node
 
             print_debug(
@@ -685,7 +706,7 @@ def parse_expression(tokens, subst_vars, functions, line_num, progress_cb=None):
         raise SyntaxError(msg) from None
     print_verbose("Generated AST: " + str(ast))
 
-    if len(ast) == 0:
+    if isinstance(ast, list) and len(ast) == 0:
         msg = "Empty expression"
         if line_num is not None:
             msg = f"Line {line_num}: {msg}"
@@ -753,12 +774,14 @@ def parse_function(
     name,
     params=None,
     declared_variables=None,
+    config: ProgramConfig | None = None,
     *,
     line_nums: list[int] | None = None,
     header_line_num: int | None = None,
     progress_cb=None,
 ):
     local_scope = subst_vars.copy()
+    local_config = replace(config) if config is not None else ProgramConfig()
     for line_no, tokens in enumerate(func_tokens):
         if progress_cb is not None:
             try:
@@ -772,6 +795,18 @@ def parse_function(
             if (line_nums is not None and line_no < len(line_nums))
             else None
         )
+        if tokens and tokens[0] == "//":
+            try:
+                parse_pragma(" ".join(tokens[1:]), local_config)
+            except Exception as e:
+                msg = str(e).strip()
+                if statement_line_num is not None and not msg.lower().startswith(
+                    "line "
+                ):
+                    msg = f"Line {statement_line_num}: {msg}"
+                raise type(e)(msg) from None
+            continue
+
         if len(tokens) > 1 and tokens[1] == "=":
             _raise_if_conflicts_with_declared_variables(
                 tokens[0],
@@ -779,12 +814,18 @@ def parse_function(
                 kind="Substitution variable",
                 line_num=statement_line_num,
             )
-            local_scope[tokens[0]] = parse_expression(
+            local_expr = parse_expression(
                 tokens[2:],
                 local_scope,
                 functions,
                 statement_line_num,
                 progress_cb=progress_cb,
+            )
+            local_scope[tokens[0]] = _apply_line_transforms(
+                local_expr,
+                config=local_config,
+                functions=functions,
+                line_num=statement_line_num,
             )
         elif len(tokens) > 1 and tokens[1] == ":=":
             var_name = tokens[0]
@@ -819,6 +860,12 @@ def parse_function(
                 progress_cb=progress_cb,
             )
             expr = fix_structure(expr)
+            expr = _apply_line_transforms(
+                expr,
+                config=local_config,
+                functions=functions,
+                line_num=statement_line_num,
+            )
             _validate_no_undefined_identifiers(
                 expr,
                 declared_variables=(declared_variables or []) + (params or []),
@@ -983,13 +1030,32 @@ def parse_repeat(
                     kind="Substitution variable",
                     line_num=statement_line_num,
                 )
-                subst_vars[tokens[0]] = parse_expression(
+                sub_expr = parse_expression(
                     tokens[2:],
                     subst_vars | itr_bindings,
                     functions,
                     statement_line_num,
                     progress_cb=progress_cb,
                 )
+                subst_vars[tokens[0]] = _apply_line_transforms(
+                    sub_expr,
+                    config=config,
+                    functions=functions,
+                    line_num=statement_line_num,
+                )
+                line_no += 1
+                continue
+
+            if tokens[0] == "//":
+                try:
+                    parse_pragma(" ".join(tokens[1:]), config)
+                except Exception as e:
+                    msg = str(e).strip()
+                    if statement_line_num is not None and not msg.lower().startswith(
+                        "line "
+                    ):
+                        msg = f"Line {statement_line_num}: {msg}"
+                    raise type(e)(msg) from None
                 line_no += 1
                 continue
 
@@ -1106,11 +1172,13 @@ def parse_repeat(
                     declared_variables=variables,
                     line_num=statement_line_num,
                 )
-                results.append(
-                    Output(
-                        output=output_state["output"],
-                        ast=expr,
-                        config=replace(config, output=output_state["output"]),
+                results.extend(
+                    _finalize_output_line_ast(
+                        expr,
+                        output_var=output_state["output"],
+                        config=config,
+                        functions=functions,
+                        line_num=statement_line_num,
                     )
                 )
                 output_state["output"] = None
@@ -1225,6 +1293,7 @@ def parse_pm3_to_ast(code, *, progress: bool = False):
                     function_name,
                     current_function.params,
                     config.variables,
+                    config=replace(config),
                     line_nums=function_line_nums,
                     header_line_num=function_header_line_num,
                     progress_cb=progress_update,
@@ -1348,11 +1417,13 @@ def parse_pm3_to_ast(code, *, progress: bool = False):
                     declared_variables=config.variables,
                     line_num=line_num,
                 )
-                compiled.append(
-                    Output(
-                        output=output_state["output"],
-                        ast=expr,
-                        config=replace(config, output=output_state["output"]),
+                compiled.extend(
+                    _finalize_output_line_ast(
+                        expr,
+                        output_var=output_state["output"],
+                        config=config,
+                        functions=funcs,
+                        line_num=line_num,
                     )
                 )
                 config.output = None
@@ -1385,8 +1456,21 @@ def parse_pm3_to_ast(code, *, progress: bool = False):
                         kind="Substitution variable",
                         line_num=line_num,
                     )
-                    subst_vars[tokens[0]] = tokens[2:]
-                    print_debug(f"substitution set: {tokens[0]!r} = {tokens[2:]!r}")
+                    sub_expr = parse_expression(
+                        tokens[2:],
+                        subst_vars,
+                        funcs,
+                        line_num,
+                        progress_cb=progress_update,
+                    )
+                    sub_expr = _apply_line_transforms(
+                        sub_expr,
+                        config=config,
+                        functions=funcs,
+                        line_num=line_num,
+                    )
+                    subst_vars[tokens[0]] = sub_expr
+                    print_debug(f"substitution set: {tokens[0]!r} = {sub_expr!r}")
                 elif len(tokens) > 1 and tokens[1] == ":=":
                     # python eval!
                     progress_update("parsing main body", "python eval")
@@ -1426,6 +1510,7 @@ def parse_pm3_to_ast(code, *, progress: bool = False):
             function_name,
             current_function.params,
             config.variables,
+            config=replace(config),
             line_nums=function_line_nums,
             header_line_num=function_header_line_num,
             progress_cb=progress_update,
@@ -1496,6 +1581,18 @@ def generate_expression(ast):
 
         return False
 
+    def needs_parens_for_scalar(parent_op, child, is_right=False):
+        if parent_op != "**" or is_right:
+            return False
+        if isinstance(child, (int, float)):
+            return child < 0
+        if isinstance(child, str):
+            try:
+                return float(child) < 0
+            except Exception:
+                return False
+        return False
+
     def gen(ast):
         if isinstance(ast, list):
             if not ast:
@@ -1503,11 +1600,19 @@ def generate_expression(ast):
             if isinstance(ast[0], str):
                 func_name = ast[0]
                 if func_name in INFIX_OPERATIONS:
+                    if len(ast) == 2:
+                        arg_str = gen(ast[1])
+                        if needs_parens(func_name, ast[1], True):
+                            arg_str = f"({arg_str})"
+                        return f"{func_name}{arg_str}"
+
                     args = []
                     for i, arg in enumerate(ast[1:]):
                         is_right_arg = i == len(ast[1:]) - 1
                         arg_str = gen(arg)
-                        if needs_parens(func_name, arg, is_right_arg):
+                        if needs_parens(
+                            func_name, arg, is_right_arg
+                        ) or needs_parens_for_scalar(func_name, arg, is_right_arg):
                             arg_str = f"({arg_str})"
                         args.append(arg_str)
                     return f" {func_name} ".join(args)
@@ -1532,7 +1637,14 @@ def simplify_literals_ast(ast, config):
                 **math_funcs,
                 "epsilon": config.epsilon,
             }
-            result = eval(expr_str, eval_namespace)
+            try:
+                result = eval(expr_str, eval_namespace)
+            except ZeroDivisionError:
+                return 0
+            if isinstance(result, complex):
+                raise ValueError(
+                    f"Complex result is not supported in simplify mode: {expr_str} -> {result}"
+                )
             if isinstance(result, float):
                 if result.is_integer():
                     result = int(result)
@@ -1633,7 +1745,7 @@ def simplify_algebratic_identities(ast):
                 if ast[1] == ast[2]:
                     return 1
                 if ast[2] == 0:
-                    raise ZeroDivisionError("division by zero found in simplification")
+                    return 0
                 if isinstance(ast[1], list) and ast[1][0] == "*":
                     if ast[1][1] == ast[2]:
                         return ast[1][2]
@@ -1666,6 +1778,18 @@ def simplify_algebratic_identities(ast):
                     return 1
                 if isinstance(ast[1], list) and ast[1][0] == "**":
                     return ["**", ast[1][1], ["*", ast[1][2], ast[2]]]
+                if ast[2] == -1:
+                    return ["/", 1, ast[1]]
+                if ast[1] < 0 and ast[2] < 1 and ast[2] > 0:
+                    raise ValueError("Root of negative number in simplification")
+
+        if ast[0] == "sqrt":
+            if ast[1] < 0:
+                raise ValueError("Square root of negative number in simplification")
+            if ast[1] == 0:
+                return 0
+            if ast[1] == 1:
+                return 1
 
         return ast
 
@@ -1677,6 +1801,90 @@ def simplify_ast(ast, config):
     ast = simplify_literals_ast(ast, config)
     ast = simplify_algebratic_identities(ast)
     return ast
+
+
+def _can_simplify_now(config: ProgramConfig) -> bool:
+    return (
+        bool(config.simplify)
+        and config.precision is not None
+        and config.epsilon is not None
+    )
+
+
+def _apply_line_transforms(
+    ast, *, config: ProgramConfig, functions, line_num: int | None
+):
+    expr = ast
+
+    if _can_simplify_now(config):
+        expr = simplify_ast(expr, config)
+
+    if config.sympy:
+        try:
+            import sympy  # noqa: F401
+        except ImportError:
+            raise ImportError(
+                "SymPy is required for sympy output. Please install it via 'pip install sympy'."
+            ) from None
+
+        expr_str = generate_expression(expr)
+        _, sympy_expr = _sympy_simplify_worker((0, expr_str))
+        expr = parse_expression(tokenize(sympy_expr), {}, functions, line_num)
+        expr = fix_structure(expr)
+
+        if _can_simplify_now(config):
+            expr = simplify_ast(expr, config)
+
+    return expr
+
+
+def _finalize_output_line_ast(
+    ast,
+    *,
+    output_var,
+    config: ProgramConfig,
+    functions,
+    line_num: int | None,
+):
+    expr = _apply_line_transforms(
+        ast,
+        config=config,
+        functions=functions,
+        line_num=line_num,
+    )
+
+    if config.dupe:
+        pairs = extract_subexpressions(
+            expr,
+            output_var,
+            min_savings=config.dupe_min_savings,
+        )
+    else:
+        pairs = [(expr, output_var)]
+
+    out = []
+    for expr_ast, out_var in pairs:
+        final_ast = _apply_line_transforms(
+            expr_ast,
+            config=config,
+            functions=functions,
+            line_num=line_num,
+        )
+        out.append(
+            Output(
+                output=out_var,
+                ast=final_ast,
+                config=replace(
+                    config,
+                    output=out_var,
+                    simplify=False,
+                    dupe=False,
+                    sympy=False,
+                ),
+            )
+        )
+
+    return out
 
 
 def all_sublists(expr):

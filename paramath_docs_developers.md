@@ -37,7 +37,7 @@ paramath3 testfile.pm -dv
 paramath3 testfile.pm -tmo compiled.txt -O
 ```
 
-Common flags:
+Program flags:
 
 - `-o, --output FILE` : output file (default: `math.txt`).
 - `-d, --debug` : enable debug logs.

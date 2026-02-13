@@ -17,7 +17,14 @@ def simplify_literals_ast(ast, config):
                 **math_funcs,
                 "epsilon": config.epsilon,
             }
-            result = eval(expr_str, eval_namespace)
+            try:
+                result = eval(expr_str, eval_namespace)
+            except ZeroDivisionError:
+                return 0
+            if isinstance(result, complex):
+                raise ValueError(
+                    f"Complex result is not supported in simplify mode: {expr_str} -> {result}"
+                )
             if isinstance(result, float):
                 result = round(result, config.precision)
             return result
@@ -69,6 +76,8 @@ def simplify_algebratic_identities(ast):
                     return simplify_algebratic_identities(ast[1])
                 if ast[1] == ast[2]:
                     return 1
+                if ast[2] == 0:
+                    return 0
         if ast[0] == "**":
             if len(ast) == 3:
                 if ast[1] == 0 and ast[2] != 0:

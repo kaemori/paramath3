@@ -26,6 +26,18 @@ def generate_expression(ast):
 
         return False
 
+    def needs_parens_for_scalar(parent_op, child_ast, is_right=False):
+        if parent_op != "**" or is_right:
+            return False
+        if isinstance(child_ast, (int, float)):
+            return child_ast < 0
+        if isinstance(child_ast, str):
+            try:
+                return float(child_ast) < 0
+            except Exception:
+                return False
+        return False
+
     def gen(node):
         if isinstance(node, list):
             if not node:
@@ -33,11 +45,19 @@ def generate_expression(ast):
             if isinstance(node[0], str):
                 func_name = node[0]
                 if func_name in INFIX_OPERATIONS:
+                    if len(node) == 2:
+                        arg_str = gen(node[1])
+                        if needs_parens(func_name, node[1], True):
+                            arg_str = f"({arg_str})"
+                        return f"{func_name}{arg_str}"
+
                     args = []
                     for i, arg in enumerate(node[1:]):
                         is_right_arg = i == len(node[1:]) - 1
                         arg_str = gen(arg)
-                        if needs_parens(func_name, arg, is_right_arg):
+                        if needs_parens(
+                            func_name, arg, is_right_arg
+                        ) or needs_parens_for_scalar(func_name, arg, is_right_arg):
                             arg_str = f"({arg_str})"
                         args.append(arg_str)
                     return f" {func_name} ".join(args)

@@ -54,7 +54,7 @@ def parse_expression(tokens, subst_vars, functions, line_num, progress_cb=None):
 
     print_verbose("Generated AST: " + str(ast))
 
-    if len(ast) == 0:
+    if isinstance(ast, list) and len(ast) == 0:
         msg = "Empty expression"
         if line_num is not None:
             msg = f"Line {line_num}: {msg}"

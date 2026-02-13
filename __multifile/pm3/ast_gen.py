@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .constants import INFIX_OPERATIONS, precedence, right_assoc
+from .constants import INFIX_OPERATIONS, OPERATION_EXPANSIONS, precedence, right_assoc
 from .logging import _preview_sequence, print_debug
 
 
@@ -8,6 +8,11 @@ def generate_ast(tokens: list[str]):
     tokens = [t for t in tokens if t and t != "\n"]
 
     print_debug(f"generate_ast: {len(tokens)} tokens, head={_preview_sequence(tokens)}")
+
+    def is_callable_token(token) -> bool:
+        return isinstance(token, str) and (
+            token.isidentifier() or token in OPERATION_EXPANSIONS
+        )
 
     def parse_expr(idx):
         result = []
@@ -23,8 +28,7 @@ def generate_ast(tokens: list[str]):
             elif (
                 i + 1 < len(tokens)
                 and tokens[i + 1] == "("
-                and isinstance(token, str)
-                and token.isidentifier()
+                and is_callable_token(token)
             ):
                 func_name = token
                 args = []
@@ -77,7 +81,19 @@ def infix_to_postfix(ast):
         if not node:
             return node
 
-        if len(node) > 1 and isinstance(node[1], str) and node[1] in INFIX_OPERATIONS:
+        is_func_call = (
+            len(node) >= 2
+            and isinstance(node[0], str)
+            and node[0].isidentifier()
+            and not is_op(node[0])
+        )
+
+        has_top_level_infix = any(is_op(tok) for tok in node)
+
+        if len(node) > 1 and (
+            (isinstance(node[1], str) and node[1] in INFIX_OPERATIONS)
+            or (not is_func_call and has_top_level_infix)
+        ):
             items = node
 
             print_debug(

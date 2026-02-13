@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from .constants import INFIX_OPERATIONS
+from .constants import INFIX_OPERATIONS, OPERATION_EXPANSIONS
 from .logging import _preview_sequence, print_debug
 
 
 def tokenize(line: str) -> list[str]:
     special_tokens = {"    ": "TAB", "\t": "TAB"}
     multi_char_ops = [key for key in INFIX_OPERATIONS if len(key) > 1]
+    multi_char_ops += [
+        key
+        for key in OPERATION_EXPANSIONS
+        if len(key) > 1 and not key.isidentifier() and key not in multi_char_ops
+    ]
     multi_char_ops += [":=", "//", "**"]
 
     for token, replacement in special_tokens.items():
