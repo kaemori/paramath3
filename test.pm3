@@ -20,5 +20,3 @@ neg_numerator = -b - sqrt_disc
 denominator = 2 * a
 return numerator / denominator
 return neg_numerator / denominator
-
-return -1 == -1
