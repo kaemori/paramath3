@@ -21,4 +21,4 @@ denominator = 2 * a
 return numerator / denominator
 return neg_numerator / denominator
 
-return =0(2-2)
+return -1 == -1
