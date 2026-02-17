@@ -1654,10 +1654,10 @@ def simplify_literals_ast(ast, config):
                     f"Complex result is not supported in simplify mode: {expr_str} -> {result}"
                 )
             if isinstance(result, float):
+                if config.precision is not None:
+                    result = round(result, config.precision)
                 if result.is_integer():
                     result = int(result)
-                else:
-                    result = round(result, config.precision)
             return result
         else:
             return simplified
