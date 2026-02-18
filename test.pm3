@@ -5,8 +5,9 @@
 //simplify true
 //dupe false
 
-repeat 10 a
-    return if(mod(a, 2) == 0,
-        a / 2,
-        3 * a + 1
-    )
+
+ege = 7
+
+repeat 10
+    p = if(ege > 0, 0, 9)
+    return p

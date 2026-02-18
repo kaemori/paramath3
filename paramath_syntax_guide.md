@@ -1,52 +1,67 @@
-# Paramath Language Specification v3.0.12
+# Paramath Language Reference
 
-_A differentiable programming language for continuous computation_
+### v3.0.12 · A differentiable programming language for continuous computation
 
 ---
 
 ## Table of Contents
 
--yti
+- [Introduction](#introduction)
+- [Syntax Overview](#syntax-overview)
+- [Data Types & Substitutions](#data-types--substitutions)
+- [Operators & Functions](#operators--functions)
+- [Program Structure](#program-structure)
+- [Pragmas](#pragmas)
+- [Function Definitions](#function-definitions)
+- [Loops & Iteration](#loops--iteration)
+- [Intermediates & Code Blocks](#intermediates--code-blocks)
+- [Advanced Features](#advanced-features)
+- [Complete Examples](#complete-examples)
+- [Command-Line Interface](#command-line-interface)
+- [Error Reference](#error-reference)
+- [Best Practices](#best-practices)
+
+---
 
 ## Introduction
 
-**Paramath** is a domain-specific language designed for applications that evaluate mathematical statements (more specifically, mathematical functions in the pre-calculus domain) instead of normal machine code.
+**Paramath** is a domain-specific language designed for applications that evaluate mathematical statements — specifically, mathematical functions in the pre-calculus domain — instead of normal machine code.
 
-> **Why the name "Paramath"?**  
-> The word "paramath" comes from the portmanteau of "parenthesis" and "mathematics."
+> **Why the name "Paramath"?**
+> The word "paramath" is a portmanteau of "parenthesis" and "mathematics."
 
 ### Key Features
 
-- **Infix and prefix syntax**: Unlike Paramath v2, v3 allows infix for mathematical operations, and prefix for everything else
-- **Automatic optimization**: Duplicate expression optimization, algebratic identity simplification
-- **Loop unrolling**: Compile-time iteration for performance
-- **Functions**: Functions to easily apply repeated mathematical statements
-- **Substutions**: Unlike Paramath v2, v3 does not use globals and locals. Instead, v3 uses variable substitutions, which makes code cleaner and easier to understand
-- **Flexible output**: Display or store results in variables
-- **Simple CLI**: Improved CLI experience compared to Paramath v2
-- **Better performance**: What else to say? Better performance compared to Paramath v2
+- **Infix and prefix syntax** — arithmetic operators use infix notation; all other functions use prefix
+- **Automatic optimization** — duplicate expression extraction, algebraic identity simplification
+- **Loop unrolling** — compile-time iteration for performance
+- **Functions** — reusable mathematical building blocks
+- **Substitutions** — clean variable bindings instead of globals/locals
+- **Flexible output** — store results in named variables or output directly
+- **Simple CLI** — improved command-line experience over Paramath v2
+
+---
 
 ## Syntax Overview
 
-### Basic Structure
+### Infix vs Prefix
 
-Paramath uses both **Infix** and **prefix**, similar to most languages.
+Paramath uses both **infix** and **prefix** notation. Arithmetic operators and comparators are infix; all other functions are prefix.
 
-Arithmetic operations and the compararator functions are infix. The full list of infix operators are: `==`, `!=`, `>`, `<`, `>=`, `<=`, `+`, `-`, `*`, `/`, `**`
-
-```scheme
-(operand1 operator operand2)
-```
-
-Other functions (both builtins and user-defined) are prefix. This means the operator is outside the operands.
+Full list of infix operators: `==  !=  >  <  >=  <=  +  -  *  /  **`
 
 ```scheme
-operator(operand1, ...)
+# Infix
+a + b * c
+
+# Prefix
+sin(pi * x)
+max(a, b)
 ```
 
 ### Comments
 
-Comments start with `#` and continue to the end of the line:
+Comments start with `#` and run to end of line:
 
 ```scheme
 # This is a comment
@@ -55,16 +70,13 @@ Comments start with `#` and continue to the end of the line:
 
 ### Variables
 
-Reserved variable names (case-insensitive):
+Reserved variable names (case-insensitive): single letters `a b c d e f x y z m`, plus special names `ans`, `pi`, and `euler`.
 
-- Single letters: `a`, `b`, `c`, `d`, `e`, `f`, `x`, `y`, `m`
-- Special: `ans` (previous result), `pi`, `euler`
-
-> **Note on `ans`:** The `ans` variable stores the result of the last computed expression. When using `//store X`, the value goes to both `X` and `ans`. However, when `//dupe true` is enabled (default), the compiler may create intermediate variables that make `ans` behave unpredictably—prefer using named intermediates instead!
+> **Note on `ans`:** The `ans` variable stores the result of the last computed expression. When `//dupe true` is enabled (default), the compiler may create intermediate variables that make `ans` behave unpredictably — prefer using named intermediates instead.
 
 ---
 
-## Data Types
+## Data Types & Substitutions
 
 ### Numeric Literals
 
@@ -72,60 +84,44 @@ Reserved variable names (case-insensitive):
 42        # Integer
 3.14159   # Float
 -17       # Negative integer
-2.5e-3    # Scientific notation (preferred for small numbers!)
+2.5e-3    # Scientific notation (preferred for small numbers)
 ```
 
 ### Substitutions
 
-Define substitutions using the `=` token:
+Define substitutions with the `=` token. They can reference previously defined substitutions:
 
 ```scheme
 meaning = 42
 golden_ratio = (1 + sqrt(5)) / 2
-```
 
-Substitutions can reference other previously defined substitutions:
-
-```scheme
 radius = 5
 area = radius ** 2 * pi
 ```
 
 ### Python Expression Evaluation
 
-Substitutions support evaluating Python expressions! This lets you compute values using Python's standard library and previously defined substitutions:
+Use `:=` to evaluate a Python expression at compile-time. Access previously defined substitutions via `vars.NAME`:
 
 ```scheme
-# Simple arithmetic (evaluated as Python)
-length := len("hello world")  # Note the use of ':=' for Python eval
+length := len("hello world")
 
-# Reference previously defined globals
 radius = 5
 area := vars.radius ** 2 * pi
 
-# In loops, reference loop-scoped variables
+# In loops
 repeat 5 i
-  squared = vars.i ** 2
-  doubled = vars.squared + vars.i
-  return squared + doubled
+    squared = vars.i ** 2
+    return squared + 1
 ```
 
-**Available Python Functions:**
+Available in the eval namespace: all math functions (`sin cos tan asin acos atan abs pi`), all Python built-ins (`len str int float`…), and substitutions via `vars.NAME`.
 
-- All math functions: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `arcsin`, `arccos`, `arctan`, `abs`, `pi`, `e`
-- Built-in functions: `len()`, `str()`, `int()`, `float()`, etc.
-- Access to substitutions via `vars.SUBSTITUTION_NAME`
-    - Note that the substitution you put in a Python evaluation statement will get compiled literally. This means if your substitution contains an undefined variable (e.g. runtime variables defined in `//variables`), the compiler will raise an error.
-
-**Important Notes:**
-
-- Access substitutions with `vars.VARIABLE_NAME` (NOT `var.VARIABLE_NAME`)
-- Evaluate to numeric values that can be used in expressions
-- Use `:=` (walrus operator) for Python evaluation assignments
+> **Warning:** Use `vars.NAME` — **not** `var.NAME`. Python-evaluated substitutions are compiled literally, so any runtime variable references will raise an error.
 
 ---
 
-## Operators and Functions
+## Operators & Functions
 
 ### Basic Arithmetic
 
@@ -151,70 +147,62 @@ repeat 5 i
 | `arctan` | Inverse tangent |
 | `abs`    | Absolute value  |
 
-Example:
-
 ```scheme
 sin(pi * (x / 2))  # sin(πx/2)
 ```
 
 ### Logical Operations
 
-All logical operations are continuous approximations that depend on epsilon:
+All logical operations are continuous approximations that depend on the current `epsilon` value. They return values between 0 and 1, **not** strict booleans.
 
-| Operation     | Syntax   | Description                       |
-| ------------- | -------- | --------------------------------- |
-| Equality      | `a == b` | Returns ~1 when a≈b, ~0 otherwise |
-| Equal to zero | `=0(a)`  | Returns ~1 when a≈0, ~0 otherwise |
-| Greater than  | `a > b`  | Returns ~1 when a>b, ~0 otherwise |
-| Greater/equal | `a >= b` | Returns ~1 when a≥b, ~0 otherwise |
-| Less than     | `a < b`  | Returns ~1 when a<b, ~0 otherwise |
-| Less/equal    | `a <= b` | Returns ~1 when a≤b, ~0 otherwise |
-| Logical not   | `!(a)`   | Returns 1-a                       |
+| Operation     | Syntax   | Description               |
+| ------------- | -------- | ------------------------- |
+| Equality      | `a == b` | ~1 when a≈b, ~0 otherwise |
+| Equal to zero | `=0(a)`  | ~1 when a≈0, ~0 otherwise |
+| Greater than  | `a > b`  | ~1 when a>b, ~0 otherwise |
+| Greater/equal | `a >= b` | ~1 when a≥b, ~0 otherwise |
+| Less than     | `a < b`  | ~1 when a<b, ~0 otherwise |
+| Less/equal    | `a <= b` | ~1 when a≤b, ~0 otherwise |
+| Logical not   | `!(a)`   | Returns 1−a               |
 
-> **Tip:** The smaller your epsilon, the sharper these comparisons become. Recommended: `1e-99` for maximum sharpness.
-> **Note:** These logical operations return continuous values between 0 and 1 proportional to the set `epsilon`, not strict booleans. Excersize caution when using them in if statements or such! **Do also note that** `=0` and `!` are functions, not operators, and thus are prefix functions that require parentheses.
+> **Tip:** Smaller epsilon = sharper comparisons. Recommended: `1e-99` for maximum sharpness.
+
+> **Note:** `=0` and `!` are prefix functions requiring parentheses, not infix operators.
 
 ### Mathematical Operations
 
-| Operation | Syntax      | Description                      |
-| --------- | ----------- | -------------------------------- |
-| Sign      | `sign(a)`   | Returns -1, 0, or 1 (continuous) |
-| Max       | `max(a, b)` | Maximum of a and b               |
-| Min       | `min(a, b)` | Minimum of a and b               |
-| Max0      | `max0(a)`   | Maximum of a and 0               |
-| Min0      | `min0(a)`   | Minimum of a and 0               |
-| Modulo    | `mod(a, b)` | a modulo b                       |
-| Fraction  | `frac(a)`   | Fractional part of a             |
-| Natural   | `nat(a)`    | Rounds a to nearest integer      |
-
-> **Note:** These functions return continuous values proportional to the set `epsilon`.
+| Operation      | Syntax      | Description                      |
+| -------------- | ----------- | -------------------------------- |
+| Sign           | `sign(a)`   | Returns −1, 0, or 1 (continuous) |
+| Max            | `max(a, b)` | Maximum of a and b               |
+| Min            | `min(a, b)` | Minimum of a and b               |
+| Max of a and 0 | `max0(a)`   | Maximum of a and 0               |
+| Min of a and 0 | `min0(a)`   | Minimum of a and 0               |
+| Modulo         | `mod(a, b)` | a modulo b                       |
+| Fractional     | `frac(a)`   | Fractional part of a             |
+| Floor          | `floor(a)`  | Floor of a                       |
+| Ceiling        | `ceil(a)`   | Ceiling of a                     |
+| Round          | `round(a)`  | Rounds to nearest integer        |
 
 ### Conditional Operations
 
-```scheme
-if(condition then_value else_value)
-```
-
-> **Note:** There are no checks to see if the condition are strictly 0 or 1, or even outside of the range. Use with caution! **Do note that** `if` is a function, not an operator, and thus is a prefix function that requires parentheses.
-
-Example:
+`if` is a prefix function, not an operator:
 
 ```scheme
+if(condition, then_value, else_value)
+
+# Collatz conjecture step
 if(mod(x, 2) == 0,
     x / 2,
     3 * x + 1
-)  # Collatz conjecture!
+)
 ```
+
+> **Warning:** Conditions are not checked for strict 0/1. Values outside [0, 1] produce blended outputs — use with caution.
 
 ---
 
 ## Program Structure
-
-A Paramath program consists of:
-
-1. **Configuration**: Precision, epsilon, optimization settings
-2. **Substitutions** (optional): Named substitutions for reuse
-3. **Code blocks**: Computation blocks with output directives
 
 ### Minimal Program
 
@@ -234,125 +222,103 @@ return 2 + 2
 //dupe true 0
 //sympy false
 
-# Constants
+# Substitutions
 radius = 5
 
 # Functions
-def circle_area(r):
+def circle_area r
     return pi * r * r
 
-# Computation
+# Output
 return circle_area(radius)
 ```
 
 ---
 
-## Pragmas and Directives
+## Pragmas
 
-Pragmas are special commands that start with `//`.
+Pragmas start with `//` and configure compiler behaviour. They can appear anywhere and affect all subsequent code.
 
-### Configuration Pragmas
+### `//precision`
 
-Can appear anywhere and affect subsequent code:
-
-#### `//precision`
-
-Sets decimal precision for python evaluation:
+Sets decimal precision for Python evaluation:
 
 ```scheme
 //precision 4
-pi_low := pi  # Evaluates to 4 decimals
+pi_low := pi     # evaluates to 3.1416
 
 //precision 10
-pi_high := pi  # Evaluates to 10 decimals
+pi_high := pi    # evaluates to 3.1415926536
 ```
 
-> **Note:** `pi` is calculated using python's math module, which provides up to 15 accurate significant decimals, and reaches 17 decimal places. If a higher precision is needed, creating a custom `PI_ACCURATE` substitution would be the most elegant solution. Note that using `pi` as a variable instead is also recommended, as the compiler assumes the `pi` variable on the calculator instead of the literal, resulting in less characters in the final output (e.g. `4 * pi` instead of `4 * 3.1415926535`)
+> **Note:** Python's `math` module provides up to 15 significant decimals. For higher precision, define a custom `PI_ACCURATE` substitution. Using `pi` as a variable is also recommended — the compiler emits the symbol rather than the literal, keeping output shorter (e.g. `4 * pi` vs `4 * 3.141592`).
 
-#### `//epsilon`
+### `//epsilon`
 
-Sets the epsilon parameter for logical operations:
+Sets the epsilon parameter for all logical operations:
 
 ```scheme
-//epsilon 1e-99  # Sharp comparisons
-//epsilon 1e-50  # Slightly softer
+//epsilon 1e-99   # sharp comparisons (recommended)
+//epsilon 1e-10   # slightly softer
 ```
 
-> **Note:** Smaller epsilon = sharper decision boundaries. Recommended: `1e-99` for most use cases.
+### `//variables`
 
-#### `//variables`
-
-Sets the letter variables that the compiler recognizes and accepts. Note that the variables `ans`, `pi`, and `euler` cannot be changed.
+Overrides the set of recognised variable names. Cannot change `ans`, `pi`, or `euler`:
 
 ```scheme
-//variables a b c d e f x y z m  # Default
-//variables m n o p q  # Note that this overwrites previous variable configuration
+//variables a b c d e f x y z m   # default
+//variables m n o p q             # replaces previous declaration
 ```
 
-#### `//simplify`
+### `//simplify`
 
-Enables/disables compile-time simplification of literal expressions and algebraic identities:
+Enables or disables compile-time simplification of literals and algebraic identities:
 
 ```scheme
-//simplify true   # Default: simplifies 2 + 3 to 5 at compile time
-//simplify false  # Keeps all expressions as-is
+//simplify true    # default — simplifies 2 + 3 → 5 at compile time
+//simplify false   # keep expressions as-is
 ```
 
-#### `//dupe`
+### `//dupe`
 
-Enables/disables duplicate subexpression detection, with optional second parameter for minimum savings threshold:
+Enables or disables duplicate subexpression extraction. Optional second parameter sets a minimum savings threshold:
 
 ```scheme
-//dupe true       # Default: extracts repeated subexpressions
-//dupe false      # Keeps expression as-is, even with duplicates
-//dupe true -999  # Makes sure all possible duplications are extracted
+//dupe true        # default — extract repeated subexpressions
+//dupe false       # keep expression as-is
+//dupe true -999   # extract every possible duplication
 ```
 
-> **Warning:** When `//dupe true`, the compiler may create intermediate results automatically. This makes `ans` less predictable - use named variables instead!
+> **Warning:** When `//dupe true`, the compiler may create hidden intermediates. This makes `ans` less predictable — use named variables instead.
 
-#### `//sympy`
+### `//sympy`
 
-Enables/disables using Sympy to simplify the math expression:
+Enables SymPy-based simplification of output expressions:
 
 ```scheme
-//sympy true  # Will use SymPy to simplify expressions
-//sympy false  # Default. Disables using SymPy to simplify expressions
+//sympy true    # simplify via SymPy
+//sympy false   # default
 ```
 
-> **Warning:** This option is not extensively tested, and thus is more or less experimental. To use it, you must first have SymPy installed, otherwise the compiler will crash.
+> **Warning:** Experimental. Requires SymPy (`pip install sympy`), otherwise the compiler will crash.
 
-### Outputting
+### Output Directives
 
-#### `return`
-
-Outputs are specified with the use of the `return` token at the start of the code block you want to output.
+Use `return` to emit a value, and `out <var>` before it to store the result in a named variable:
 
 ```scheme
-return 2
-```
-
-Output directives (symbolized by the `out` token) appear at the start of code blocks to specify which variable (defined in `variables`) will receive the output. If not provided, the compiler simply outputs the result without storing it (e.g. only to `ans`).
-
-#### `No directive`
-
-Output result to console:
-
-```scheme
+# Emit without storing
 return 2 + 3
-```
 
-#### `out`
-
-Store result in a variable:
-
-```scheme
+# Store in x, then use it
 out x
 return 2 + 3
 
-return x * 2  # Uses stored value
+return x * 2
 ```
 
-Default variable names: `a`, `b`, `c`, `d`, `e`, `f`, `x`, `y`, `m`
+Default variable names: `a b c d e f x y z m`
 
 ---
 
@@ -362,12 +328,11 @@ Default variable names: `a`, `b`, `c`, `d`, `e`, `f`, `x`, `y`, `m`
 
 ```scheme
 def function_name param1 param2 ...
-    <any substitutions, optional>
-    return <final expression to return>
+    # optional substitutions
+    return <expression>
 ```
 
-- Function names are case-sensitive
-- Body must end with with `return` (return directive)
+Function names are case-sensitive. The body must end with `return`.
 
 ### Examples
 
@@ -378,26 +343,24 @@ def square x
 def distance x1 y1 x2 y2
     return sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
-return distance(0, 0, 3, 4)  # Returns 5.0
+return distance(0, 0, 3, 4)  # → 5.0
 ```
 
-> **Note:** Recursion is strictly prohibited; This is because functions are unwrapped at compile time, and it will unwrap until Python raises a `RecursionError` error.
+> **Warning:** Recursion is strictly prohibited. Functions are expanded at compile time — a recursive call will exhaust Python's call stack.
 
 ---
 
-## Loops and Iteration
+## Loops & Iteration
 
-### Basic Loop Syntax
+Loops are **unrolled at compile time**. The body is copied `count` times with substitutions inlined.
+
+### Basic Syntax
 
 ```scheme
-repeat count_expression [iterator_variable, optional]
-    <loop body>
-    return <expression to return per iteration>
+repeat count_expression [iterator_variable]
+    # body
+    return <expression>
 ```
-
-Note that it is possible to have multiple return statements in the loop body; each will generate a separate output expression per iteration.
-
-> **Note:** Loops are **unrolled at compile time** - the loop body is copied `count` times with substitutions.
 
 ### Simple Loop
 
@@ -406,24 +369,20 @@ size = 3
 
 repeat size
     return x + 1
+# → produces 3 separate (x + 1) expressions
 ```
 
-This generates 3 separate expressions, each computing `(+ x 1)`.
+### Loop with Iterator Variable
 
-> **Note:** Indentations are not necessary, but they help with readability.
-
-### Loops with Iterator Variable
+The iterator takes values 0, 1, … N−1:
 
 ```scheme
 repeat 5 i
     return i ** 2
+# → 0, 1, 4, 9, 16
 ```
 
-The iterator `i` takes values 0, 1, 2, 3, 4 in each unrolled iteration.
-
 ### Local Variables in Loops
-
-Use `//local` to define variables that only exist within the loop:
 
 ```scheme
 repeat 3 i
@@ -431,11 +390,7 @@ repeat 3 i
     return square + 1
 ```
 
-Each iteration gets its own `square` variable with the correct value.
-
 ### Nested Loops
-
-Loops can be nested:
 
 ```scheme
 repeat 3 i
@@ -443,7 +398,7 @@ repeat 3 i
         return i * 10 + j
 ```
 
-### Advanced Loop Example
+### Advanced Example
 
 ```scheme
 N = 10
@@ -456,45 +411,35 @@ repeat N i
 
 ---
 
-## Intermediates and Code Blocks
+## Intermediates & Code Blocks
 
 ### Intermediate Assignments
 
-Instead of nested parentheses hell, you can break expressions into named parts:
+Break complex expressions into named parts instead of writing deeply nested parentheses:
 
 ```scheme
+# Instead of: sqrt(x ** 2 + y ** 2)
 a = x ** 2
 b = y ** 2
 c = a + b
 return c ** 0.5
 ```
 
-This is **much** cleaner than `sqrt(x ** 2 + y ** 2)`!
-
 ### Naming Rules
 
-- Intermediate names must be alphanumeric (plus underscores)
-- They cannot conflict with:
-    - Global constants
-    - Function names
-    - Aliases
-    - Variable names
-    - Other intermediates in the same scope
+- Names must be alphanumeric (plus underscores)
+- Cannot conflict with: global constants, function names, variable names, or other intermediates in the same scope
 
 ### Complex Example
 
 ```scheme
-# Compute quadratic formula
+# Quadratic formula (positive root)
 discriminant = b ** 2 - 4 * a * c
-sqrt_disc = discriminant ** 0.5
-numerator = (-1 * b) + sqrt_disc
-denominator = 2 * a
+sqrt_disc    = discriminant ** 0.5
+numerator    = (-1 * b) + sqrt_disc
+denominator  = 2 * a
 return numerator / denominator
 ```
-
-### Automatic Expansion
-
-The compiler automatically expands intermediates into the final expression. You write clean code, it generates optimized math!
 
 ---
 
@@ -502,143 +447,96 @@ The compiler automatically expands intermediates into the final expression. You 
 
 ### Automatic Duplicate Detection
 
-When `//dupe true` (default), the compiler finds repeated subexpressions and extracts them automatically:
+When `//dupe true` (default), the compiler finds repeated subexpressions and extracts them into intermediates automatically:
 
 ```scheme
 //dupe true -999
-//display
-//ret (+ (* (+ x 1) (+ x 1)) (* (+ x 1) (+ x 1)))
+return (x + 1) * (x + 1) + (x + 1) * (x + 1)
+# (x + 1) appears 4 times — compiler creates an intermediate
 ```
-
-The compiler recognizes `(+ x 1)` appears 4 times and may create an intermediate for it.
 
 ### Epsilon in Expressions
 
-Access the current epsilon value using `ε` or `epsilon`:
+Access the current epsilon value directly using `epsilon`:
 
 ```scheme
 //epsilon 0.01
-//display
-//ret (/ x (+ x ε))  # Uses current epsilon value
+return x / (x + epsilon)
 ```
 
-### Expression Length Optimization
+### Expression Length Optimisation
 
-The compiler tracks expression length and tries to minimize it:
-
-- Extracts beneficial duplicates (saves space)
+- Extracts beneficial duplicates to save space
 - Flattens associative operations
-- Applies heuristics to simplify (e.g., `x + x + x` → `x * 3`)
-- Applies identity simplifications (e.g., `x * 1` → `x`)
+- Applies algebraic identity simplification (e.g. `x * 1` → `x`)
 
 ---
 
 ## Complete Examples
 
-### Example 1: Polynomial Evaluation with Horner's Method
+### Polynomial Evaluation (Horner's Method)
+
+```scheme
+//precision 6
+//epsilon 1e-99
+
+def horner x a b c d
+    t1 = a * x
+    t2 = t1 + b
+    t3 = t2 * x
+    t4 = t3 + c
+    t5 = t4 * x
+    return t5 + d
+
+return horner(x, 2, -3, 1, 5)
+```
+
+### Vector Dot Product & Angle
+
+```scheme
+def dot_product ax ay bx by
+    return ax * bx + ay * by
+
+def magnitude vx vy
+    return (vx * vx + vy * vy) ** 0.5
+
+dot  = dot_product(a, b, c, d)
+mag1 = magnitude(a, b)
+mag2 = magnitude(c, d)
+return dot / (mag1 * mag2)  # cosine of angle
+```
+
+### Smooth Activation Functions
 
 ```scheme
 //epsilon 1e-99
 
-# Evaluate polynomial: ax³ + bx² + cx + d
-//def horner $x $a $b $c $d
-  term1 = (* $a $x)
-  term2 = (+ term1 $b)
-  term3 = (* term2 $x)
-  term4 = (+ term3 $c)
-  term5 = (* term4 $x)
-  //ret (+ term5 $d)
+def sigmoid x
+    return 1 / (1 + euler ** (-1 * x))
 
-//display
-//ret (horner x 2 -3 1 5)
+def relu x
+    return max0(x)
+
+def gelu x
+    sig = sigmoid(1.702 * x)
+    return x * sig
+
+return gelu(x)
 ```
 
-### Example 2: Fibonacci with Loops
+### Parametric Circle
 
 ```scheme
-//global N 10
-
-//repeat globals.N i
-  //display
-  special = < i 2
-  //ret (if special i (** ans 2))
-//endrepeat
-```
-
-### Example 3: Vector Operations
-
-```scheme
-//alias x1 a
-//alias y1 b
-//alias x2 c
-//alias y2 d
-
-//def dot_product $ax $ay $bx $by
-//ret (+ (* $ax $bx) (* $ay $by))
-
-//def magnitude $x $y
-//ret (** (+ (* $x $x) (* $y $y)) 0.5)
-
-//display
-vec1_mag = (magnitude x1 y1)
-vec2_mag = (magnitude x2 y2)
-dot = (dot_product x1 y1 x2 y2)
-//ret (/ dot (* vec1_mag vec2_mag))  # Cosine of angle
-```
-
-### Example 4: Smooth Activation Functions
-
-```scheme
+//precision 8
 //epsilon 1e-99
 
-//def sigmoid $x
-//ret (/ 1 (+ 1 (** e (* -1 $x))))
+N = 50
 
-//def tanh_approx $x
-//ret (- (* 2 (sigmoid (* 2 $x))) 1)
-
-//def relu $x
-//ret (max0 $x)
-
-//def gelu $x
-  sig = (sigmoid (* 1.702 $x))
-  //ret (* $x sig)
-
-//display
-//ret (gelu x)
-```
-
-### Example 5: Numerical Differentiation
-
-```scheme
-//global H 1e-5
-
-//def derivative $f $x
-  x_plus_h = (+ $x H)
-  x_minus_h = (- $x H)
-  f_plus = ($f x_plus_h)
-  f_minus = ($f x_minus_h)
-  //ret (/ (- f_plus f_minus) (* 2 H))
-
-//def my_function $x
-//ret (* $x (* $x $x))  # x³
-
-//display
-//ret (derivative my_function x)  # Should be ~3x²
-```
-
-### Example 6: Parametric Curves
-
-```scheme
-//global N 50
-
-//repeat globals.N i
-  //local t (/ i N)
-  //local x_pos (cos (* 2 (* pi t)))
-  //local y_pos (sin (* 2 (* pi t)))
-  //display
-  //ret (+ (* x_pos x_pos) (* y_pos y_pos))  # Should be 1 (circle!)
-//endrepeat
+repeat N i
+    t    = i / N
+    xpos = cos(2 * pi * t)
+    ypos = sin(2 * pi * t)
+    return xpos * xpos + ypos * ypos  # should be 1 everywhere
 ```
 
 ---
@@ -653,84 +551,49 @@ paramath [options] filepath
 
 ### Options
 
-| Flag      | Long Form        | Description                                           | Example                            |
-| --------- | ---------------- | ----------------------------------------------------- | ---------------------------------- |
-| `-h`      | `--help`         | Show help message                                     | `paramath --help`                  |
-| `-v`      | `--version`      | Print version and exit                                | `paramath --version`               |
-| `-o FILE` | `--output FILE`  | Output file (default: `math.txt`)                     | `paramath input.pm -o results.txt` |
-| `-D`      | `--debug`        | Enable debug output                                   | `paramath input.pm -D`             |
-| `-V`      | `--verbose`      | Enable verbose output                                 | `paramath input.pm -V`             |
-| `-O`      | `--print-output` | Print compiled output to console                      | `paramath input.pm -O`             |
-| `-m`      | `--math-output`  | Format output for calculators                         | `paramath input.pm -m`             |
-| `-S`      | `--safe-eval`    | Block Python code evaluation and print what would run | `paramath unknown.pm -S`           |
-| `-L FILE` | `--logfile FILE` | Write logs to FILE                                    | `paramath input.pm -L debug.log`   |
+| Flag      | Long Form        | Description                             |
+| --------- | ---------------- | --------------------------------------- |
+| `-h`      | `--help`         | Show help message                       |
+| `-v`      | `--version`      | Print version and exit                  |
+| `-o FILE` | `--output FILE`  | Output file (default: `math.txt`)       |
+| `-D`      | `--debug`        | Enable debug output                     |
+| `-V`      | `--verbose`      | Enable verbose output                   |
+| `-O`      | `--print-output` | Print compiled output to console        |
+| `-m`      | `--math-output`  | Format output for calculators           |
+| `-S`      | `--safe-eval`    | Block Python eval; print what would run |
+| `-L FILE` | `--logfile FILE` | Write logs to FILE                      |
 
 ### Flag Details
 
 #### `-O` / `--print-output`
 
-Prints the compiled mathematical expressions to stdout:
-
-```bash
-$ paramath myfile.pm -O
-reading myfile.pm
-
-to ('display', None):
-(sin(x))+1
-to ('display', None):
-(cos(x))+2
-
-=== compilation successful! ===
-generated 2 expressions
-written to: math.txt
-```
+Prints compiled expressions to stdout in addition to writing to the output file.
 
 #### `-S` / `--safe-eval`
 
-**Security feature**: Blocks execution of Python code in `//global` and `//local` expressions. This lets you safely inspect unknown paramath files before running them:
-
-```bash
-$ paramath untrusted.pm -S
-reading untrusted.pm
-[safe evaluation enabled]
-# ... would print what Python code would execute, then exit without running it
-```
-
-Use this when:
-
-- Running untrusted `.pm` files
-- Reviewing user-submitted paramath code
-- Auditing what Python expressions will be evaluated
+Security feature: blocks execution of Python `:=` expressions. Use this when inspecting untrusted `.pm` files before running them.
 
 #### `-D` / `--debug`
 
-Enables detailed debug output showing parsing steps, optimization decisions, etc. Useful for understanding how the compiler works.
+Enables detailed debug output showing parsing steps, AST transformations, and optimisation decisions.
 
 #### `-V` / `--verbose`
 
-Enables verbose output showing high-level compilation progress.
-
-#### `-L` / `--logfile FILE`
-
-Writes all debug and verbose output to a file instead of stdout:
-
-```bash
-paramath myfile.pm -D -V -L compiler.log
-```
+Enables high-level compilation progress output.
 
 ### Examples
 
 ```bash
-# Compile with verbose output and save to custom file
-paramath myprogram.pm -Vo results.txt
+# Compile with verbose output, custom output file
+paramath myprogram.pm -V -o results.txt
 
-# Compile, print output, and save debug log
-paramath myprogram.pm -ODL debug.log
+# Print compiled output and save a debug log
+paramath myprogram.pm -O -D -L debug.log
 
-# Check unknown file before running (safe eval)
+# Inspect an untrusted file without executing Python
 paramath untrusted.pm -S
 
-# Minimal compilation (quiet)
+# Minimal quiet compile
 paramath myprogram.pm
 ```
 
@@ -740,49 +603,41 @@ paramath myprogram.pm
 
 ### Parser Errors
 
-| Error                                     | Cause                                  | Solution                                 |
-| ----------------------------------------- | -------------------------------------- | ---------------------------------------- |
-| `unexpected end of tokens`                | Missing closing parenthesis            | Add `)`                                  |
-| `unexpected closing parenthesis`          | Extra `)` or missing `(`               | Check balance                            |
-| `unknown identifier 'X'`                  | Undefined variable/constant            | Define with `//global` or check spelling |
-| `unknown operation 'X'`                   | Undefined function                     | Define with `//def` or check spelling    |
-| `incomplete expression at line X`         | Unbalanced parentheses in intermediate | Check your assignment                    |
-| `expression without assignment at line X` | Forgot `=` in intermediate             | Use `var_name = expr` format             |
-
-### Block Errors
-
-| Error                                | Cause                                | Solution             |
-| ------------------------------------ | ------------------------------------ | -------------------- |
-| `no output mode before codeblock`    | Missing `//display` or `//store`     | Add output directive |
-| `codeblock has no //ret directive`   | Missing `//ret`                      | Add `//ret expr`     |
-| `incomplete //ret expression`        | Unbalanced parentheses after `//ret` | Check parentheses    |
-| `'X' conflicts with global constant` | Naming conflict                      | Use different name   |
-| `'X' conflicts with function name`   | Naming conflict                      | Use different name   |
-
-### Loop Errors
-
-| Error                                            | Cause                  | Solution                             |
-| ------------------------------------------------ | ---------------------- | ------------------------------------ |
-| `//repeat without matching //endrepeat`          | Missing `//endrepeat`  | Add `//endrepeat`                    |
-| `//endrepeat without matching //repeat`          | Extra `//endrepeat`    | Remove it                            |
-| `repeat range must be non-negative`              | Negative loop count    | Use positive number                  |
-| `//local can only be used inside //repeat loops` | `//local` outside loop | Move inside loop or use intermediate |
-| `'X' already defined in this loop`               | Duplicate local name   | Use different name                   |
+| Error                            | Cause                                       | Fix                           |
+| -------------------------------- | ------------------------------------------- | ----------------------------- |
+| `Unexpected end of tokens`       | Missing closing `)`                         | Add `)`                       |
+| `Unexpected closing parenthesis` | Extra `)` or missing `(`                    | Check balance                 |
+| `Undefined identifier 'X'`       | Unknown variable                            | Define or check spelling      |
+| `Malformed expression: <expr>`   | Malformed expression or wrong function call | Check syntax                  |
+| `Empty expression`               | `return` with no body                       | Add expression after `return` |
+| `Unknown statement: X`           | Unrecognised top-level token                | Check statement syntax        |
 
 ### Function Errors
 
-| Error                                     | Cause                  | Solution                  |
-| ----------------------------------------- | ---------------------- | ------------------------- |
-| `function 'X' expects N arguments, got M` | Wrong argument count   | Check function definition |
-| `function parameters must start with $`   | Invalid parameter name | Use `$param` format       |
+| Error                                     | Cause                        | Fix                       |
+| ----------------------------------------- | ---------------------------- | ------------------------- |
+| `Function 'X' expects N args, got M`      | Wrong argument count         | Check function definition |
+| `Function 'X' missing return statement`   | No `return` in function body | Add `return`              |
+| `Recursive substitution detected for 'X'` | Circular substitution        | Break the cycle           |
 
-### Lambda Errors
+### Loop Errors
 
-| Error                                 | Cause                | Solution                    |
-| ------------------------------------- | -------------------- | --------------------------- |
-| `lambda must be immediately applied`  | Standalone lambda    | Wrap: `((lambda ...) args)` |
-| `lambda expects N arguments, got M`   | Wrong argument count | Check parameters            |
-| `lambda parameters must start with $` | Invalid parameter    | Use `$param` format         |
+| Error                                           | Cause                       | Fix                               |
+| ----------------------------------------------- | --------------------------- | --------------------------------- |
+| `Repetition count must be an integer`           | Float or non-constant count | Use a constant integer            |
+| `Precision must be set before repeat statement` | Missing `//precision`       | Add `//precision` before `repeat` |
+| `Epsilon must be set before repeat statement`   | Missing `//epsilon`         | Add `//epsilon` before `repeat`   |
+| `Iteration variable 'X' conflicts with …`       | Name collision              | Rename the variable               |
+
+### Pragma Errors
+
+| Error                                               | Cause                                | Fix                        |
+| --------------------------------------------------- | ------------------------------------ | -------------------------- |
+| `Unknown pragma: X`                                 | Typo or unsupported pragma           | Check pragma name          |
+| `Precision must be an integer`                      | Non-integer value                    | Use e.g. `//precision 6`   |
+| `Epsilon must be a float`                           | Non-numeric value                    | Use e.g. `//epsilon 1e-99` |
+| `Dupe min_savings must be an integer`               | Non-integer second arg               | Use e.g. `//dupe true 0`   |
+| `'X' conflicts with a name declared in //variables` | Substitution name matches a variable | Rename the substitution    |
 
 ---
 
@@ -791,179 +646,76 @@ paramath myprogram.pm
 ### 1. Use Small Epsilon Values
 
 ```scheme
-//epsilon 1e-99  # Recommended for sharp comparisons
+//epsilon 1e-99  # recommended for sharp comparisons
 ```
 
-> **Tip:** Avoid epsilon values larger than `1e-50` unless you specifically need smooth transitions.
+> **Tip:** Avoid epsilon values larger than `1e-50` unless you specifically need smooth, gradient-friendly transitions.
 
-### 2. Prefer Intermediates Over Deeply Nested Expressions
+### 2. Prefer Intermediates Over Nested Expressions
 
 ```scheme
-# Bad
-//ret (/ (+ (** (- x2 x1) 2) (** (- y2 y1) 2)) (+ (abs (- x2 x1)) (abs (- y2 y1))))
+# Hard to read
+return ((x2-x1)**2 + (y2-y1)**2) / (abs(x2-x1) + abs(y2-y1))
 
-# Good
-dx = (- x2 x1)
-dy = (- y2 y1)
-euclidean = (** (+ (* dx dx) (* dy dy)) 0.5)
-manhattan = (+ (abs dx) (abs dy))
-//ret (/ euclidean manhattan)
+# Clear and maintainable
+dx        = x2 - x1
+dy        = y2 - y1
+euclidean = (dx * dx + dy * dy) ** 0.5
+manhattan = abs(dx) + abs(dy)
+return euclidean / manhattan
 ```
 
-### 3. Use Aliases for Semantic Clarity
+### 3. Avoid Relying on `ans` with Dupe Enabled
+
+When `//dupe true`, hidden intermediates are created that overwrite `ans`. Use `out <var>` to store results explicitly:
 
 ```scheme
-//alias input_voltage x
-//alias output_current y
-//alias resistance a
+out a
+return some_complex_expression(x)
 
-//display
-//ret (/ input_voltage resistance)  # Ohm's law
+return a * 2  # safe — a is explicit
 ```
 
-### 4. Avoid Relying on `ans` with Dupe Detection
-
-When `//dupe true`, the compiler may create hidden intermediates that clobber `ans`. Instead:
+### 4. Use Loops for Repeated Patterns
 
 ```scheme
-# Questionable
-//store ans
-//ret (complex_computation x)
-
-//display
-//ret (* ans 2)  # Might not be what you expect!
-
-# Better
-//alias result1 a
-
-//store result1
-//ret (complex_computation x)
-
-//display
-//ret (* result1 2)  # Explicit and clear
-```
-
-### 5. Use Loops for Repeated Patterns
-
-```scheme
-# Bad: copy-paste hell
-//display
-//ret (* 0 0)
-//display
-//ret (* 1 1)
-//display
-//ret (* 2 2)
-# ... 97 more times
+# Bad: copy-paste
+return 0 ** 2
+return 1 ** 2
+return 2 ** 2
 
 # Good: loop
-//display
-//repeat 100 i
-  //ret (** i 2)
-//endrepeat
+repeat 100 i
+    return i ** 2
 ```
 
-### 6. Break Complex Functions into Smaller Ones
+### 5. Break Complex Functions into Smaller Ones
 
 ```scheme
-# Bad: monolithic function
-//def neural_network $x
-//ret (... 50 lines of nested operations ...)
+def sigmoid x
+    return 1 / (1 + euler ** (-1 * x))
 
-# Good: modular design
-//def sigmoid $x
-//ret (/ 1 (+ 1 (** e (* -1 $x))))
+def layer x w b
+    return sigmoid(w * x + b)
 
-//def layer $x $w $b
-//ret (sigmoid (+ (* $w $x) $b))
-
-//def neural_network $x
-  h1 = (layer $x 0.5 0.1)
-  h2 = (layer h1 0.3 -0.2)
-  //ret (layer h2 0.8 0.0)
+def network x
+    h1 = layer(x,   0.5,  0.1)
+    h2 = layer(h1,  0.3, -0.2)
+    return layer(h2, 0.8,  0.0)
 ```
 
-### 7. Comment Your Epsilon Choices
+### 6. Comment Your Epsilon Choices
 
 ```scheme
 # Sharp comparison for exact equality check
 //epsilon 1e-99
-//display
-//ret (== x y)
+return x == y
 
-# Smooth transition for gradient-based optimization
+# Smooth transition for gradient-based optimisation
 //epsilon 1e-10
-//display
-//ret (if (> x threshold) high_val low_val)
-```
-
-### 8. Use Meaningful Constant Names
-
-```scheme
-# Bad
-//global C1 299792458
-//global C2 6.62607015e-34
-
-# Good
-//global SPEED_OF_LIGHT 299792458
-//global PLANCK_CONSTANT 6.62607015e-34
+return if(x > threshold, high_val, low_val)
 ```
 
 ---
 
-## Language Grammar (EBNF)
-
-```ebnf
-program        ::= (pragma | function | code_block)*
-
-pragma         ::= "//" pragma_name pragma_args?
-pragma_name    ::= "precision" | "epsilon" | "global" | "alias" |
-                   "display" | "store" | "ret" | "simplify" | "dupe" | "variables" |
-                   "def" | "enddef" | "repeat" | "endrepeat" | "local"
-
-code_block     ::= output_directive intermediate* ret_directive
-output_directive ::= "//display" | "//store" var_name
-intermediate   ::= identifier "=" expression newline
-ret_directive  ::= "//ret" expression newline?
-
-function       ::= "//def" func_name param* newline
-                   intermediate* ret_directive newline
-                   "
-
-loop           ::= "//repeat" expression identifier? newline
-                   (pragma | local_def | intermediate | ret_directive)*
-                   "//endrepeat"
-
-local_def      ::= "//local" identifier expression newline
-
-expression     ::= number | variable | constant | "ε" | "epsilon" |
-                   "(" operator expression* ")" |
-                   lambda_expr
-
-lambda_expr    ::= "(" "(" "lambda" "(" param* ")" expression ")"
-                   expression* ")"
-
-operator       ::= "+" | "-" | "*" | "/" | "**" |
-                   "sin" | "cos" | "tan" | "arcsin" | "arccos" | "arctan" |
-                   "abs" | "==" | "=0" | ">" | ">=" | "<" | "<=" |
-                   "!" | "sign" | "max" | "min" | "max0" | "min0" |
-                   "if" | "mod" | "frac" | "nat" | func_name
-
-param          ::= "$" identifier
-var_name       ::= "a".."f" | "x" | "y" | "m"
-number         ::= "-"? digit+ ("." digit+)? (("e"|"E") ("-"|"+")? digit+)?
-identifier     ::= (alpha | "_") (alpha | digit | "_")*
-```
-
----
-
-## Contributing
-
-Paramath is an evolving language. Contributions and feedback are welcome!
-
-**Version**: 2.2.5
-**License**: MIT  
-**GitHub**: https://github.com/kaemori/paramath
-
----
-
-_Last updated: December 2025_
+_Paramath v3.0.12 · MIT License · [github.com/kaemori/paramath3](https://github.com/kaemori/paramath3)_

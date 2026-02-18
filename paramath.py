@@ -280,7 +280,7 @@ def tokenize(line):
 
 
 def generate_ast(tokens):
-    tokens = [t for t in tokens if t and t != "\n"]
+    tokens = [t for t in tokens if t is not None and t != "" and t != "\n"]
 
     print_debug(f"generate_ast: {len(tokens)} tokens, head={_preview_sequence(tokens)}")
 
@@ -1711,6 +1711,10 @@ def simplify_literals_ast(ast, config):
 
 
 def simplify_algebratic_identities(ast):
+    def _is_real_number_node(node) -> bool:
+        # Avoid treating booleans as numbers here.
+        return isinstance(node, (int, float)) and not isinstance(node, bool)
+
     if isinstance(ast, list):
         simplified_children = [ast[0]] + [
             simplify_algebratic_identities(child) for child in ast[1:]
@@ -1833,11 +1837,16 @@ def simplify_algebratic_identities(ast):
                     return ["**", ast[1][1], ["*", ast[1][2], ast[2]]]
                 if ast[2] == -1:
                     return ["/", 1, ast[1]]
-                if ast[1] < 0 and ast[2] < 1 and ast[2] > 0:
+                if (
+                    _is_real_number_node(ast[1])
+                    and _is_real_number_node(ast[2])
+                    and ast[1] < 0
+                    and 0 < ast[2] < 1
+                ):
                     raise ValueError("Root of negative number in simplification")
 
         if ast[0] == "sqrt":
-            if ast[1] < 0:
+            if _is_real_number_node(ast[1]) and ast[1] < 0:
                 raise ValueError("Square root of negative number in simplification")
             if ast[1] == 0:
                 return 0
