@@ -30,9 +30,15 @@ OPERATION_EXPANSIONS = {
         ["+", ["*", 2, ["abs", ["-", a, b]]], eps],
     ],
     ">=": lambda a, b, eps: [
-        "/",
-        ["-", ["+", ["-", a, b], ["abs", ["-", a, b]]], eps],
-        ["+", ["*", 2, ["abs", ["-", a, b]]], eps],
+        [
+            "-",
+            1,
+            [
+                "/",
+                ["+", ["-", b, a], ["abs", ["-", b, a]]],
+                ["+", ["*", 2, ["abs", ["-", b, a]]], eps],
+            ],
+        ]
     ],
     "<": lambda a, b, eps: [
         "/",
@@ -40,9 +46,13 @@ OPERATION_EXPANSIONS = {
         ["+", ["*", 2, ["abs", ["-", b, a]]], eps],
     ],
     "<=": lambda a, b, eps: [
-        "/",
-        ["-", ["+", ["-", b, a], ["abs", ["-", b, a]]], eps],
-        ["+", ["*", 2, ["abs", ["-", b, a]]], eps],
+        "-",
+        1,
+        [
+            "/",
+            ["+", ["-", a, b], ["abs", ["-", a, b]]],
+            ["+", ["*", 2, ["abs", ["-", a, b]]], eps],
+        ],
     ],
     "!": lambda a: ["-", 1, a],
     "sign": lambda a, eps: ["/", a, ["+", ["abs", a], eps]],
@@ -339,12 +349,46 @@ def infix_to_postfix(ast):
     def is_op(token):
         return isinstance(token, str) and token in INFIX_OPERATIONS
 
+    def looks_like_prefix_ast(node) -> bool:
+        """Return True when `node` is already in prefix AST form.
+
+        This parser supports both infix token lists (e.g. ['a','/','b']) and
+        prefix AST nodes (e.g. ['/', 'a', 'b']). Substitutions can inject
+        already-parsed prefix AST nodes into new expressions; those must be
+        treated as atomic subtrees, not re-parsed as infix.
+        """
+
+        if not isinstance(node, list) or not node:
+            return False
+
+        head = node[0]
+        if not isinstance(head, str):
+            return False
+
+        # Unary +/- in a token stream looks like ['-','x'] and must be parsed.
+        if head in {"+", "-"} and len(node) == 2:
+            return False
+
+        # If the head is an operator and the tail doesn't contain top-level
+        # infix operators, it's almost certainly a prefix AST node.
+        if head in INFIX_OPERATIONS or head in OPERATION_EXPANSIONS or head == "!":
+            if any(is_op(tok) for tok in node[1:]):
+                return False
+            return True
+
+        return False
+
     def convert(node):
         if not isinstance(node, list):
             return node
 
         if not node:
             return node
+
+        # If we've been handed a subtree that's already in prefix AST form,
+        # just recurse into its children and return.
+        if looks_like_prefix_ast(node):
+            return [node[0]] + [convert(arg) for arg in node[1:]]
 
         is_func_call = (
             len(node) >= 2
@@ -354,10 +398,20 @@ def infix_to_postfix(ast):
         )
 
         has_top_level_infix = any(is_op(tok) for tok in node)
+        has_top_level_infix_in_tail = any(is_op(tok) for tok in node[1:])
 
         if len(node) > 1 and (
+            # Standard infix form: operand op operand
             (isinstance(node[1], str) and node[1] in INFIX_OPERATIONS)
-            or (not is_func_call and has_top_level_infix)
+            # Token streams that contain infix operators later in the list
+            # (e.g. ['-','a','*','b'])
+            or (not is_func_call and has_top_level_infix_in_tail)
+            # Pure unary token stream, e.g. ['-','a']
+            or (
+                len(node) == 2
+                and isinstance(node[0], str)
+                and node[0] in {"+", "-", "!"}
+            )
         ):
             items = node
 
@@ -1636,10 +1690,23 @@ def generate_expression(ast):
 
 
 def simplify_literals_ast(ast, config):
+    def _contains_symbol(node, symbol: str) -> bool:
+        if node == symbol:
+            return True
+        if isinstance(node, list):
+            return any(_contains_symbol(child, symbol) for child in node)
+        return False
+
     if isinstance(ast, list):
         simplified = [simplify_literals_ast(elem, config) for elem in ast]
         if is_constant(simplified):
             expr_str = generate_expression(simplified)
+            protect_zero_rounding = (
+                isinstance(simplified, list)
+                and bool(simplified)
+                and simplified[0] == "+"
+                and _contains_symbol(simplified, "epsilon")
+            )
             eval_namespace = {
                 "__builtins__": builtins.__dict__,
                 **math_funcs,
@@ -1655,7 +1722,9 @@ def simplify_literals_ast(ast, config):
                 )
             if isinstance(result, float):
                 if config.precision is not None:
-                    result = round(result, config.precision)
+                    rounded = round(result, config.precision)
+                    if not (protect_zero_rounding and rounded == 0.0 and result != 0.0):
+                        result = rounded
                 if result.is_integer():
                     result = int(result)
             return result
@@ -2108,7 +2177,7 @@ def process_asts(asts, *, progress: bool = False):
 
         if sum(item.sympy for item in outputs_ast):
             progress_stage("sympy")
-            print_verbose("sympy enabled for some outputs")
+            print_verbose("sympy enabled for some/all outputs")
             try:
                 import sympy
             except ImportError:

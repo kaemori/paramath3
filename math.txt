@@ -1,12 +1,56 @@
 to None:
+1
+to None:
+0
+to None:
+0
+to None:
 0
 to None:
 0
 to None:
 1
 to None:
-2
+9999999999999999999999
 to None:
-0.33
+1
+to None:
+1
 to None:
 0
+to None:
+0
+to None:
+1
+to None:
+1
+to None:
+9999999999999999999999
+to None:
+0
+to None:
+1
+to None:
+0
+to None:
+9999999999999999999999
+to None:
+1
+to None:
+0
+to None:
+1
+to None:
+9999999999999999999999
+to None:
+-1
+to None:
+0
+to None:
+1
+to None:
+9999999999999999999999
+to None:
+0
+to None:
+1
