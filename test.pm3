@@ -1,46 +1,12 @@
-//precision 2
+//precision 3
 //epsilon 1e-99
 //variables x y z
 
 //simplify true
+//dupe false
 
-
-# test comparisons
-return 1 > 0  # 1
-return 1 > 1  # 0
-return 1 > 2  # 0
-return 1 < 0  # 0
-return 1 < 1  # 0
-return 1 < 2  # 1
-
-return 9999999999999999999999
-
-return 1 >= 0  # 1
-return 1 >= 1  # 1
-return 1 >= 2  # 0
-return 1 <= 0  # 0
-return 1 <= 1  # 1
-return 1 <= 2  # 1
-
-return 9999999999999999999999
-
-return 1 == 0  # 0
-return 1 == 1  # 1
-return 1 == 2  # 0
-
-return 9999999999999999999999
-
-return 1 != 0  # 1
-return 1 != 1  # 0
-return 1 != 2  # 1
-
-return 9999999999999999999999
-
-return sign(-1)  # -1
-return sign(0)  # 0
-return sign(1)  # 1
-
-return 9999999999999999999999
-
-return !(1)  # 0
-return !(0)  # 1
+repeat 10 a
+    return if(mod(a, 2) == 0,
+        a / 2,
+        3 * a + 1
+    )

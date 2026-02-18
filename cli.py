@@ -23,6 +23,7 @@ from colors import colors
 import_colors_time = time.time() - last_time
 last_time = time.time()
 from paramath import (
+    file_to_lines,
     parse_pm3_to_ast,
     process_asts,
     check_python_eval,
@@ -246,35 +247,30 @@ examples:
     print_debug(f"Init finished: {(time.time() - time_start)*1000:.6f}ms")
 
     try:
-        with open(input_file, "r", encoding="utf-8") as f:
-            code = [line.rstrip() for line in f.readlines() if line]
+        code = file_to_lines(input_file)
+        print_verbose(f"loaded script: {len(code)} non-empty lines from '{input_file}'")
+        print_debug(f"script content: {code}")
 
-            print_verbose(
-                f"loaded script: {len(code)} non-empty lines from '{input_file}'"
+        if not trust:
+            print(
+                _warn("Running as untrusted.") + " " + _dim("No code will be executed.")
             )
+            python_eval = check_python_eval(code)
+            if python_eval:
+                if old_print is not None:
+                    builtins.print = old_print
 
-            if not trust:
+                print(_err("The following Python code was found in the script:"))
+                for line_no, line in python_eval:
+                    print(_err(f"Line {line_no}:") + f' "{line}"')
                 print(
-                    _warn("Running as untrusted.")
+                    _err("Aborting due to untrusted code execution.")
                     + " "
-                    + _dim("No code will be executed.")
+                    + _dim("Review the code, THEN run with -t to trust.")
                 )
-                python_eval = check_python_eval(code)
-                if python_eval:
-                    if old_print is not None:
-                        builtins.print = old_print
+                sys.exit(1)
 
-                    print(_err("The following Python code was found in the script:"))
-                    for line_no, line in python_eval:
-                        print(_err(f"Line {line_no}:") + f' "{line}"')
-                    print(
-                        _err("Aborting due to untrusted code execution.")
-                        + " "
-                        + _dim("Review the code, THEN run with -t to trust.")
-                    )
-                    sys.exit(1)
-
-                print("")
+            print("")
 
         asts, config = parse_pm3_to_ast(code, progress=progress)
         print_verbose(f"parsed to ASTs: {len(asts)} outputs")
@@ -324,7 +320,7 @@ examples:
         print(_err("Error:") + " " + str(e))
         print(
             _dim(
-                f"If this is an error in the compiler,\n{traceback.format_exception_only(type(e), e)[0].strip()}."
+                f"If this is an error in the compiler,\n{"".join(traceback.format_exception(e)[1:])}."
             )
         )
 

@@ -350,14 +350,6 @@ def infix_to_postfix(ast):
         return isinstance(token, str) and token in INFIX_OPERATIONS
 
     def looks_like_prefix_ast(node) -> bool:
-        """Return True when `node` is already in prefix AST form.
-
-        This parser supports both infix token lists (e.g. ['a','/','b']) and
-        prefix AST nodes (e.g. ['/', 'a', 'b']). Substitutions can inject
-        already-parsed prefix AST nodes into new expressions; those must be
-        treated as atomic subtrees, not re-parsed as infix.
-        """
-
         if not isinstance(node, list) or not node:
             return False
 
@@ -365,12 +357,9 @@ def infix_to_postfix(ast):
         if not isinstance(head, str):
             return False
 
-        # Unary +/- in a token stream looks like ['-','x'] and must be parsed.
         if head in {"+", "-"} and len(node) == 2:
             return False
 
-        # If the head is an operator and the tail doesn't contain top-level
-        # infix operators, it's almost certainly a prefix AST node.
         if head in INFIX_OPERATIONS or head in OPERATION_EXPANSIONS or head == "!":
             if any(is_op(tok) for tok in node[1:]):
                 return False
@@ -385,8 +374,6 @@ def infix_to_postfix(ast):
         if not node:
             return node
 
-        # If we've been handed a subtree that's already in prefix AST form,
-        # just recurse into its children and return.
         if looks_like_prefix_ast(node):
             return [node[0]] + [convert(arg) for arg in node[1:]]
 
@@ -401,12 +388,8 @@ def infix_to_postfix(ast):
         has_top_level_infix_in_tail = any(is_op(tok) for tok in node[1:])
 
         if len(node) > 1 and (
-            # Standard infix form: operand op operand
             (isinstance(node[1], str) and node[1] in INFIX_OPERATIONS)
-            # Token streams that contain infix operators later in the list
-            # (e.g. ['-','a','*','b'])
             or (not is_func_call and has_top_level_infix_in_tail)
-            # Pure unary token stream, e.g. ['-','a']
             or (
                 len(node) == 2
                 and isinstance(node[0], str)
@@ -696,9 +679,6 @@ def substitute_vars(tokens, subst_vars, _stack=None):
         for token in tokens:
             replaced = substitute_vars(token, subst_vars, _stack)
 
-            # If we're substituting into a token stream, we want to splice in
-            # *token lists* (e.g. ['sin','(','x',')']) but keep AST nodes
-            # (e.g. ['*','a','2']) as a single atomic item.
             if isinstance(replaced, list):
                 if len(replaced) == 1 and not isinstance(replaced[0], list):
                     out.append(replaced[0])
@@ -1152,9 +1132,6 @@ def parse_repeat(
                     if statement_line_num is not None:
                         msg = f"Line {statement_line_num}: {msg}"
                     raise SyntaxError(msg)
-
-                # Legacy form: repeat <times> <var>
-                # If there are more than 3 tokens, treat everything after 'repeat' as the times expression.
                 if (
                     len(tokens) == 3
                     and isinstance(tokens[2], str)
@@ -1427,8 +1404,7 @@ def parse_pm3_to_ast(code, *, progress: bool = False):
                 repeat_body = []
                 repeat_tokens = []
                 repeat_line_nums = []
-                # Legacy form: repeat <times> <var>
-                # Otherwise: repeat <times expression...>
+
                 if (
                     len(tokens) == 3
                     and isinstance(tokens[2], str)
@@ -2205,6 +2181,46 @@ def process_asts(asts, *, progress: bool = False):
                 pass
 
 
+def file_to_lines(filename):
+    with open(filename) as f:
+        lines = f.readlines()
+        file = [
+            part if i == 0 else " " * (len(line) - len(line.lstrip())) + part.lstrip()
+            for line in lines
+            for i, part in enumerate(line.split(";"))
+        ]
+
+        code = []
+        curr_line = ""
+        bracket_level = 0
+        last_level_zero_line = 0
+        for i, line in enumerate(file):
+            if bracket_level == 0:
+                bracket_level += line.count("(") - line.count(")")
+                if bracket_level < 0:
+                    raise SyntaxError(f"Line {i+1}: Unmatched closing parenthesis")
+                if bracket_level > 0:
+                    curr_line += line.rstrip()
+                    last_level_zero_line = i + 1
+                else:
+                    code.append(line.rstrip())
+            else:
+                curr_line += line.strip()
+                bracket_level += line.count("(") - line.count(")")
+                if bracket_level < 0:
+                    raise SyntaxError(f"Line {i+1}: Unmatched closing parenthesis")
+                if bracket_level == 0:
+                    code.append(curr_line)
+                    curr_line = ""
+
+        if bracket_level > 0:
+            raise SyntaxError(
+                f"EOF: Unmatched opening parenthesis starting at line {last_level_zero_line}"
+            )
+
+        return code
+
+
 def check_python_eval(code):
     check = [(i + 1, line) for i, line in enumerate(code) if ":=" in line]
     return check
@@ -2212,7 +2228,7 @@ def check_python_eval(code):
 
 if __name__ == "__main__":
     with open("mockup.pm3") as f:
-        code = [line.rstrip() for line in f.readlines() if line]
+        code = file_to_lines("mockup.pm3")
         asts, config = parse_pm3_to_ast(code, progress=True)
         outputs = process_asts(asts, progress=True)
 
