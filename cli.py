@@ -23,7 +23,7 @@ from colors import colors
 import_colors_time = time.time() - last_time
 last_time = time.time()
 from paramath import (
-    file_to_lines,
+    code_to_lines,
     parse_pm3_to_ast,
     process_asts,
     check_python_eval,
@@ -247,7 +247,8 @@ examples:
     print_debug(f"Init finished: {(time.time() - time_start)*1000:.6f}ms")
 
     try:
-        code = file_to_lines(input_file)
+        with open(input_file) as f:
+            code = code_to_lines(f.readlines())
         print_verbose(f"loaded script: {len(code)} non-empty lines from '{input_file}'")
         print_debug(f"script content: {code}")
 
@@ -272,7 +273,7 @@ examples:
 
             print("")
 
-        asts, config = parse_pm3_to_ast(code, progress=progress)
+        asts = parse_pm3_to_ast(code, progress=progress)
         print_verbose(f"parsed to ASTs: {len(asts)} outputs")
         outputs = process_asts(asts, progress=progress)
         print_verbose(f"compiled outputs: {len(outputs)} expressions")

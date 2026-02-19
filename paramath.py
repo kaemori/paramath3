@@ -1593,7 +1593,7 @@ def parse_pm3_to_ast(code, *, progress: bool = False):
         except Exception:
             pass
 
-    return compiled, config
+    return compiled
 
 
 def generate_expression(ast):
@@ -2190,44 +2190,52 @@ def process_asts(asts, *, progress: bool = False):
                 pass
 
 
+def code_to_lines(source):
+    if isinstance(source, str):
+        lines = source.splitlines(keepends=True)
+    else:
+        lines = list(source)
+
+    expanded_lines = [
+        part if i == 0 else " " * (len(line) - len(line.lstrip())) + part.lstrip()
+        for line in lines
+        for i, part in enumerate(line.split(";"))
+    ]
+
+    code = []
+    curr_line = ""
+    bracket_level = 0
+    last_level_zero_line = 0
+    for i, line in enumerate(expanded_lines):
+        if bracket_level == 0:
+            bracket_level += line.count("(") - line.count(")")
+            if bracket_level < 0:
+                raise SyntaxError(f"Line {i+1}: Unmatched closing parenthesis")
+            if bracket_level > 0:
+                curr_line += line.rstrip()
+                last_level_zero_line = i + 1
+            else:
+                code.append(line.rstrip())
+        else:
+            curr_line += line.strip()
+            bracket_level += line.count("(") - line.count(")")
+            if bracket_level < 0:
+                raise SyntaxError(f"Line {i+1}: Unmatched closing parenthesis")
+            if bracket_level == 0:
+                code.append(curr_line)
+                curr_line = ""
+
+    if bracket_level > 0:
+        raise SyntaxError(
+            f"EOF: Unmatched opening parenthesis starting at line {last_level_zero_line}"
+        )
+
+    return code
+
+
 def file_to_lines(filename):
     with open(filename) as f:
-        lines = f.readlines()
-        file = [
-            part if i == 0 else " " * (len(line) - len(line.lstrip())) + part.lstrip()
-            for line in lines
-            for i, part in enumerate(line.split(";"))
-        ]
-
-        code = []
-        curr_line = ""
-        bracket_level = 0
-        last_level_zero_line = 0
-        for i, line in enumerate(file):
-            if bracket_level == 0:
-                bracket_level += line.count("(") - line.count(")")
-                if bracket_level < 0:
-                    raise SyntaxError(f"Line {i+1}: Unmatched closing parenthesis")
-                if bracket_level > 0:
-                    curr_line += line.rstrip()
-                    last_level_zero_line = i + 1
-                else:
-                    code.append(line.rstrip())
-            else:
-                curr_line += line.strip()
-                bracket_level += line.count("(") - line.count(")")
-                if bracket_level < 0:
-                    raise SyntaxError(f"Line {i+1}: Unmatched closing parenthesis")
-                if bracket_level == 0:
-                    code.append(curr_line)
-                    curr_line = ""
-
-        if bracket_level > 0:
-            raise SyntaxError(
-                f"EOF: Unmatched opening parenthesis starting at line {last_level_zero_line}"
-            )
-
-        return code
+        return code_to_lines(f.readlines())
 
 
 def check_python_eval(code):
@@ -2238,7 +2246,7 @@ def check_python_eval(code):
 if __name__ == "__main__":
     with open("mockup.pm3") as f:
         code = file_to_lines("mockup.pm3")
-        asts, config = parse_pm3_to_ast(code, progress=True)
+        asts = parse_pm3_to_ast(code, progress=True)
         outputs = process_asts(asts, progress=True)
 
         with open("math.txt", "w") as f:
