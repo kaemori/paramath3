@@ -1,5 +1,7 @@
 import math
+import json
 import builtins
+import re
 from dataclasses import dataclass, replace
 from typing import Union, Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -99,6 +101,7 @@ precedence = {
     "**": 3,
 }
 right_assoc = {"**", "+", "-", "*", "/"}
+COMMUTATIVE_OPERATIONS = {"+", "*"}
 
 math_funcs = {
     "sin": math.sin,
@@ -115,6 +118,35 @@ math_funcs = {
     "pi": math.pi,
     "euler": math.e,
 }
+
+EVAL_GLOBALS = {
+    "__builtins__": builtins.__dict__,
+    **math_funcs,
+}
+
+_MULTI_CHAR_OPS = [key for key in INFIX_OPERATIONS if len(key) > 1]
+_MULTI_CHAR_OPS += [
+    key
+    for key in OPERATION_EXPANSIONS
+    if len(key) > 1 and not key.isidentifier() and key not in _MULTI_CHAR_OPS
+]
+_MULTI_CHAR_OPS += [":=", "//", "**"]
+
+_MULTI_OP_PLACEHOLDERS = {
+    f"__MULTIOP_{i}__": op for i, op in enumerate(_MULTI_CHAR_OPS)
+}
+_OP_TO_PLACEHOLDER = {op: ph for ph, op in _MULTI_OP_PLACEHOLDERS.items()}
+_MULTI_OP_PATTERN = (
+    re.compile(
+        "|".join(re.escape(op) for op in sorted(_MULTI_CHAR_OPS, key=len, reverse=True))
+    )
+    if _MULTI_CHAR_OPS
+    else None
+)
+
+_SPLITTER_PATTERN = re.compile(r"([(),+\-*/=!\n])")
+_TAB_PATTERN = re.compile(r"\t| {4}")
+_SPACES_PATTERN = re.compile(r" +")
 
 
 def _log_message(prefix: str, message: str, max_len: int = 127):
@@ -150,28 +182,102 @@ def _preview_sequence(seq, *, max_items: int = 16) -> str:
 
 
 def stable_serialize(obj) -> str:
-    if obj is None or isinstance(obj, (bool, int, float, complex, str)):
-        return repr(obj)
+    def _to_canonical_jsonable(x):
+        if x is None or isinstance(x, (bool, int, float, str)):
+            return x
 
-    if isinstance(obj, (list, tuple)):
-        open_bracket, close_bracket = (
-            ("[", "]") if isinstance(obj, list) else ("(", ")")
-        )
-        return open_bracket + ",".join(stable_serialize(x) for x in obj) + close_bracket
+        if isinstance(x, list):
+            return [_to_canonical_jsonable(v) for v in x]
+
+        if isinstance(x, tuple):
+            return {"__tuple__": [_to_canonical_jsonable(v) for v in x]}
+
+        if isinstance(x, dict):
+            items = sorted(
+                x.items(),
+                key=lambda kv: stable_serialize(kv[0]),
+            )
+            return {
+                "__dict__": [
+                    [_to_canonical_jsonable(k), _to_canonical_jsonable(v)]
+                    for k, v in items
+                ]
+            }
+
+        if isinstance(x, set):
+            return {
+                "__set__": sorted(stable_serialize(v) for v in x),
+            }
+
+        if isinstance(x, complex):
+            return {"__complex__": [x.real, x.imag]}
+
+        return {"__repr__": repr(x)}
+
+    canonical = _to_canonical_jsonable(obj)
+    return json.dumps(canonical, sort_keys=True, separators=(",", ":"), allow_nan=True)
+
+
+def freeze_ast(obj, _memo=None):
+    if _memo is None:
+        _memo = {}
+
+    cacheable = isinstance(obj, (list, tuple, dict, set))
+    if cacheable:
+        obj_id = id(obj)
+        if obj_id in _memo:
+            return _memo[obj_id]
+
+    if obj is None:
+        result = ("none",)
+        return result
+
+    if isinstance(obj, bool):
+        result = ("bool", obj)
+        return result
+
+    if isinstance(obj, int):
+        result = ("int", obj)
+        return result
+
+    if isinstance(obj, float):
+        result = ("float", obj)
+        return result
+
+    if isinstance(obj, str):
+        result = ("str", obj)
+        return result
+
+    if isinstance(obj, list):
+        result = ("list", tuple(freeze_ast(v, _memo) for v in obj))
+        _memo[obj_id] = result
+        return result
+
+    if isinstance(obj, tuple):
+        result = ("tuple", tuple(freeze_ast(v, _memo) for v in obj))
+        _memo[obj_id] = result
+        return result
 
     if isinstance(obj, dict):
-        items = sorted(obj.items(), key=lambda kv: stable_serialize(kv[0]))
-        return (
-            "{"
-            + ",".join(f"{stable_serialize(k)}:{stable_serialize(v)}" for k, v in items)
-            + "}"
-        )
+        frozen_items = [
+            (freeze_ast(k, _memo), freeze_ast(v, _memo)) for k, v in obj.items()
+        ]
+        frozen_items.sort(key=lambda kv: kv[0])
+        result = ("dict", tuple(frozen_items))
+        _memo[obj_id] = result
+        return result
 
     if isinstance(obj, set):
-        items = sorted((stable_serialize(x) for x in obj))
-        return "set{" + ",".join(items) + "}"
+        result = ("set", tuple(sorted(freeze_ast(v, _memo) for v in obj)))
+        _memo[obj_id] = result
+        return result
 
-    return repr(obj)
+    if isinstance(obj, complex):
+        result = ("complex", obj.real, obj.imag)
+        return result
+
+    result = ("repr", repr(obj))
+    return result
 
 
 def num(val: Union[str, int, float]) -> Union[int, float]:
@@ -250,30 +356,15 @@ def fix_structure(ast):
 
 
 def tokenize(line):
-    special_tokens = {"    ": "TAB", "\t": "TAB"}
-    multi_char_ops = [key for key in INFIX_OPERATIONS if len(key) > 1]
-    multi_char_ops += [
-        key
-        for key in OPERATION_EXPANSIONS
-        if len(key) > 1 and not key.isidentifier() and key not in multi_char_ops
-    ]
-    multi_char_ops += [":=", "//", "**"]
-
-    for token, replacement in special_tokens.items():
-        line = line.replace(token, f" __{replacement}__ ")
-
-    for i, op in enumerate(multi_char_ops):
-        line = line.replace(op, f" __MULTIOP_{i}__ ")
-
-    splitters = ["(", ")", ",", "+", "-", "*", "/", "=", "!", "\n"]
-    for splitter in splitters:
-        line = line.replace(splitter, f" {splitter} ")
-    for i, op in enumerate(multi_char_ops):
-        line = line.replace(f"__MULTIOP_{i}__", op)
-
-    while "  " in line:
-        line = line.replace("  ", " ")
-
+    line = _TAB_PATTERN.sub(" __TAB__ ", line)
+    if _MULTI_OP_PATTERN:
+        line = _MULTI_OP_PATTERN.sub(
+            lambda m: f" {_OP_TO_PLACEHOLDER[m.group(0)]} ", line
+        )
+    line = _SPLITTER_PATTERN.sub(r" \1 ", line)
+    for placeholder, op in _MULTI_OP_PLACEHOLDERS.items():
+        line = line.replace(placeholder, op)
+    line = _SPACES_PATTERN.sub(" ", line)
     tokens = line.strip().split(" ")
     print_debug(f"tokenize: {len(tokens)} tokens, head={_preview_sequence(tokens)}")
     return tokens
@@ -512,11 +603,11 @@ def expand_functions(ast, functions):
 def ast_sort_key(x):
     is_const = is_constant(x)
     try:
-        length = expr_length(x) if isinstance(x, list) else (0 if is_const else 9999)
+        length = ast_node_count(x) if isinstance(x, list) else (0 if is_const else 9999)
     except Exception:
         length = 9999
-    s = stable_serialize(x)
-    return (0 if is_const else 1, length, s)
+    frozen = freeze_ast(x)
+    return (0 if is_const else 1, length, frozen)
 
 
 def normalize_ast(ast):
@@ -526,16 +617,14 @@ def normalize_ast(ast):
     if not ast:
         return ast
 
-    ast = [normalize_ast(elem) for elem in ast]
-
     op = ast[0] if isinstance(ast[0], str) else None
+    if op not in COMMUTATIVE_OPERATIONS:
+        return ast
 
-    if op in {"+", "*"}:
-        operands = ast[1:]
-        operands.sort(key=ast_sort_key, reverse=True)
-        return [op] + operands
-
-    return ast
+    ast = [normalize_ast(elem) for elem in ast]
+    operands = ast[1:]
+    operands.sort(key=ast_sort_key, reverse=True)
+    return [op] + operands
 
 
 def parse_pragma(line: str, config: ProgramConfig):
@@ -636,11 +725,15 @@ def _validate_no_undefined_identifiers(
                     and head not in allowed_ops
                     and head not in allowed_funcs
                 ):
+                    detail = (
+                        f": {generate_expression(node)}" if (VERBOSE or DEBUG) else ""
+                    )
+                    base_msg = f"Malformed expression{detail}"
                     raise SyntaxError(
                         (
-                            f"Line {line_num}: Malformed expression: {generate_expression(node)}"
+                            f"Line {line_num}: {base_msg}"
                             if line_num is not None
-                            else f"Malformed expression: {generate_expression(node)}"
+                            else base_msg
                         )
                     ) from None
             for child in node[1:] if (node and isinstance(node[0], str)) else node:
@@ -674,6 +767,17 @@ def substitute_vars(tokens, subst_vars, _stack=None):
     if _stack is None:
         _stack = set()
 
+    def _list_needs_flatten(values: list) -> bool:
+        saw_head = False
+        for value in values:
+            if isinstance(value, str):
+                if value in {"(", ")", ","}:
+                    return True
+                if saw_head and value in INFIX_OPERATIONS:
+                    return True
+            saw_head = True
+        return False
+
     if isinstance(tokens, list):
         out = []
         for token in tokens:
@@ -684,15 +788,8 @@ def substitute_vars(tokens, subst_vars, _stack=None):
                     out.append(replaced[0])
                     continue
 
-                has_paren_or_comma = any(
-                    isinstance(x, str) and x in {"(", ")", ","} for x in replaced
-                )
-                has_infix_in_non_head = any(
-                    isinstance(x, str) and x in INFIX_OPERATIONS for x in replaced[1:]
-                )
-
-                if has_paren_or_comma or has_infix_in_non_head:
-                    out.extend(substitute_vars(replaced, subst_vars, _stack))
+                if _list_needs_flatten(replaced):
+                    out.extend(replaced)
                 else:
                     out.append(replaced)
                 continue
@@ -878,13 +975,8 @@ def parse_function(
                 line_num=statement_line_num,
             )
             expr = lines[line_no].split(":=", 1)[1].strip()
-            eval_namespace = {
-                "__builtins__": builtins.__dict__,
-                "vars": EvalVars(local_scope),
-                **math_funcs,
-            }
             try:
-                result = eval(expr, eval_namespace)
+                result = eval(expr, EVAL_GLOBALS, {"vars": EvalVars(local_scope)})
             except Exception as e:
                 msg = f"Python eval failed: {e}"
                 if statement_line_num is not None:
@@ -1110,13 +1202,12 @@ def parse_repeat(
                     line_num=statement_line_num,
                 )
                 expr = lines[line_no].split(":=", 1)[1].strip()
-                eval_namespace = {
-                    "__builtins__": builtins.__dict__,
-                    "vars": EvalVars(subst_vars | itr_bindings),
-                    **math_funcs,
-                }
                 try:
-                    result = eval(expr, eval_namespace)
+                    result = eval(
+                        expr,
+                        EVAL_GLOBALS,
+                        {"vars": EvalVars(subst_vars | itr_bindings)},
+                    )
                 except Exception as e:
                     msg = f"Python eval failed: {e}"
                     if statement_line_num is not None:
@@ -1520,13 +1611,10 @@ def parse_pm3_to_ast(code, *, progress: bool = False):
                         line_num=line_num,
                     )
                     expr = line.split(":=")[1].strip()
-                    eval_namespace = {
-                        "__builtins__": builtins.__dict__,
-                        "vars": EvalVars(subst_vars),
-                        **math_funcs,
-                    }
                     try:
-                        result = eval(expr, eval_namespace)
+                        result = eval(
+                            expr, EVAL_GLOBALS, {"vars": EvalVars(subst_vars)}
+                        )
                     except Exception as e:
                         raise ValueError(
                             f"Line {line_num}: Python eval failed: {e}"
@@ -1683,13 +1771,8 @@ def simplify_literals_ast(ast, config):
                 and simplified[0] == "+"
                 and _contains_symbol(simplified, "epsilon")
             )
-            eval_namespace = {
-                "__builtins__": builtins.__dict__,
-                **math_funcs,
-                "epsilon": config.epsilon,
-            }
             try:
-                result = eval(expr_str, eval_namespace)
+                result = eval(expr_str, EVAL_GLOBALS, {"epsilon": config.epsilon})
             except ZeroDivisionError:
                 return 0
             if isinstance(result, complex):
@@ -1712,7 +1795,6 @@ def simplify_literals_ast(ast, config):
 
 def simplify_algebratic_identities(ast):
     def _is_real_number_node(node) -> bool:
-        # Avoid treating booleans as numbers here.
         return isinstance(node, (int, float)) and not isinstance(node, bool)
 
     if isinstance(ast, list):
@@ -1861,7 +1943,11 @@ def simplify_algebratic_identities(ast):
 
 def simplify_ast(ast, config):
     ast = simplify_literals_ast(ast, config)
-    ast = simplify_algebratic_identities(ast)
+    prev = None
+    while prev != ast:
+        prev = ast
+        # slight performance hit, i dont care :3
+        ast = simplify_algebratic_identities(ast)
     return ast
 
 
@@ -1965,29 +2051,47 @@ def replace_in_ast(ast, pattern, replacement: str):
 
 
 def expr_length(ast) -> int:
-    return len(generate_expression(ast).replace(" ", ""))
+    return ast_node_count(ast)
+
+
+def ast_node_count(ast) -> int:
+    if isinstance(ast, list):
+        total = 1
+        for child in ast:
+            total += ast_node_count(child)
+        return total
+    return 1
 
 
 def find_beneficial_duplicates(ast, min_length: int = 4, min_savings: int = -999):
-    seen = {}
-
     if not isinstance(ast, list):
         return []
 
-    for sub in all_sublists(ast):
-        key = stable_serialize(sub)
-        seen.setdefault(key, {"count": 0, "obj": sub})
-        seen[key]["count"] += 1
+    seen = {}
+    freeze_memo = {}
+
+    def _traverse(node):
+        if not isinstance(node, list):
+            return 1
+        size = 1
+        for child in node:
+            size += _traverse(child)
+        if size >= min_length:
+            key = freeze_ast(node, freeze_memo)
+            if key in seen:
+                seen[key][0] += 1
+            else:
+                seen[key] = [1, node, size]
+        return size
+
+    _traverse(ast)
 
     beneficial_dupes = []
-    for data in seen.values():
-        if data["count"] > 1:
-            dupe_length = expr_length(data["obj"])
-            if dupe_length >= min_length:
-                total_size = data["count"] * dupe_length
-                savings = total_size - (dupe_length + 3 + (data["count"] - 1) * 3)
-                if savings > min_savings:
-                    beneficial_dupes.append((savings, total_size, data["obj"]))
+    for count, obj, size in seen.values():
+        if count > 1:
+            savings = count * size - (size + 3 + (count - 1) * 3)
+            if savings > min_savings:
+                beneficial_dupes.append((savings, count * size, obj))
 
     beneficial_dupes.sort(key=lambda x: (x[0], x[1]), reverse=True)
     return beneficial_dupes

@@ -2,12 +2,12 @@
 //epsilon 1e-99
 //variables x y z
 
-//simplify true
-//dupe false
+//simplify false
+//dupe true -999
 
 
 ege = 7
 
-repeat 10
-    p = if(ege > 0, 0, 9)
+repeat 10 a
+    p = if(a < ege, 0, 9)
     return p

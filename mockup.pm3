@@ -29,15 +29,15 @@ return sin(x) ** 2 + cos(x) ** 2
 repeat 2
     return 20
 
-# return 20 / mod(7, 8)
-# return var + python_var + dependent  # output to display
+return 20 / mod(7, 8)
+return var + python_var + dependent  # output to display
 
-# return max0(var) == !(var >= 2)
-# return if(a==0, a, 0)
+return max0(var) == !(var >= 2)
+return if(a==0, a, 0)
 
 return 3 + 3 + 4 * 2
 return 3 * 3 * 4 + 2
-# return better_mod(7, 3)
+return better_mod(7, 3)
 
 def square a
     return a ** 2

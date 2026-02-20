@@ -33,6 +33,7 @@ from paramath import (
 import paramath
 
 import_paramath_time = time.time() - last_time
+main_time = time.time()
 
 PROGRAM_VERSION = "3.0.12"
 
@@ -296,7 +297,7 @@ examples:
                     print(expr)
 
         print(_ok("=== Compilation successful! ==="))
-        print(_dim("Compiled in") + _ok(f" {(time.time() - time_start):.6f}s!"))
+        print(_dim("Compiled in") + _ok(f" {(time.time() - main_time):.6f}s!"))
         print(_dim("Generated ") + _clear(f"{len(outputs)} outputs"))
         print(_dim("Output written to ") + _path(f'"{output_file}"'))
 
