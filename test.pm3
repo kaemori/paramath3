@@ -1,13 +1,13 @@
-//precision 3
+//precision 2
 //epsilon 1e-99
 //variables x y z
 
-//simplify false
-//dupe true -999
+//simplify true
+//dupe false
 
 
 ege = 7
 
-repeat 10 a
-    p = if(a < ege, 0, 9)
-    return p
+repeat 20 a
+    modans = mod(a, 10)
+    return modans

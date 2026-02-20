@@ -1,40 +1,40 @@
-to ans:
-(7 - 0 + abs(7 - 0)) / (2 * abs(7 - 0) + epsilon)
 to None:
-(1 - ans) * 9 + ans * 0
-to ans:
-(7 - 1 + abs(7 - 1)) / (2 * abs(7 - 1) + epsilon)
+0
 to None:
-(1 - ans) * 9 + ans * 0
-to ans:
-(7 - 2 + abs(7 - 2)) / (2 * abs(7 - 2) + epsilon)
+1
 to None:
-(1 - ans) * 9 + ans * 0
-to ans:
-(7 - 3 + abs(7 - 3)) / (2 * abs(7 - 3) + epsilon)
+2
 to None:
-(1 - ans) * 9 + ans * 0
-to ans:
-(7 - 4 + abs(7 - 4)) / (2 * abs(7 - 4) + epsilon)
+3
 to None:
-(1 - ans) * 9 + ans * 0
-to ans:
-(7 - 5 + abs(7 - 5)) / (2 * abs(7 - 5) + epsilon)
+4
 to None:
-(1 - ans) * 9 + ans * 0
-to ans:
-(7 - 6 + abs(7 - 6)) / (2 * abs(7 - 6) + epsilon)
+5
 to None:
-(1 - ans) * 9 + ans * 0
-to ans:
-(7 - 7 + abs(7 - 7)) / (2 * abs(7 - 7) + epsilon)
+-4
 to None:
-(1 - ans) * 9 + ans * 0
-to ans:
-(7 - 8 + abs(7 - 8)) / (2 * abs(7 - 8) + epsilon)
+-3
 to None:
-(1 - ans) * 9 + ans * 0
-to ans:
-(7 - 9 + abs(7 - 9)) / (2 * abs(7 - 9) + epsilon)
+-2
 to None:
-(1 - ans) * 9 + ans * 0
+-1
+to None:
+0
+to None:
+1
+to None:
+2
+to None:
+3
+to None:
+4
+to None:
+5
+to None:
+-4
+to None:
+-3
+to None:
+-2
+to None:
+-1

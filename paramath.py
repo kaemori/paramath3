@@ -119,6 +119,23 @@ math_funcs = {
     "euler": math.e,
 }
 
+# test deg mode
+# math_funcs = {
+#     "sin": lambda a: math.sin(math.radians(a)),
+#     "cos": lambda a: math.cos(math.radians(a)),
+#     "tan": lambda a: math.tan(math.radians(a)),
+#     "asin": lambda a: math.degrees(math.asin(a)),
+#     "acos": lambda a: math.degrees(math.acos(a)),
+#     "atan": lambda a: math.degrees(math.atan(a)),
+#     "arcsin": lambda a: math.degrees(math.asin(a)),
+#     "arccos": lambda a: math.degrees(math.acos(a)),
+#     "arctan": lambda a: math.degrees(math.atan(a)),
+#     "sqrt": math.sqrt,
+#     "abs": abs,
+#     "pi": math.pi,
+#     "euler": math.e,
+# }
+
 EVAL_GLOBALS = {
     "__builtins__": builtins.__dict__,
     **math_funcs,
@@ -1753,7 +1770,7 @@ def generate_expression(ast):
     return gen(ast)
 
 
-def simplify_literals_ast(ast, config):
+def simplify_literals_ast(ast, config, *, apply_precision: bool = True):
     def _contains_symbol(node, symbol: str) -> bool:
         if node == symbol:
             return True
@@ -1762,7 +1779,9 @@ def simplify_literals_ast(ast, config):
         return False
 
     if isinstance(ast, list):
-        simplified = [simplify_literals_ast(elem, config) for elem in ast]
+        simplified = [
+            simplify_literals_ast(elem, config, apply_precision=False) for elem in ast
+        ]
         if is_constant(simplified):
             expr_str = generate_expression(simplified)
             protect_zero_rounding = (
@@ -1780,7 +1799,7 @@ def simplify_literals_ast(ast, config):
                     f"Complex result is not supported in simplify mode: {expr_str} -> {result}"
                 )
             if isinstance(result, float):
-                if config.precision is not None:
+                if apply_precision and config.precision is not None:
                     rounded = round(result, config.precision)
                     if not (protect_zero_rounding and rounded == 0.0 and result != 0.0):
                         result = rounded
