@@ -1,4 +1,4 @@
-//precision 2
+//precision 5
 //epsilon 1e-99
 //variables x y z
 
@@ -9,5 +9,4 @@
 ege = 7
 
 repeat 20 a
-    modans = mod(a, 10)
-    return modans
+    return frac(a/2)

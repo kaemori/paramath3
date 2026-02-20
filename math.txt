@@ -1,40 +1,40 @@
 to None:
 0
 to None:
-1
-to None:
-2
-to None:
-3
-to None:
-4
-to None:
-5
-to None:
--4
-to None:
--3
-to None:
--2
-to None:
--1
+0.5
 to None:
 0
 to None:
-1
+0.5
 to None:
-2
+0
 to None:
-3
+0.5
 to None:
-4
+0
 to None:
-5
+0.5
 to None:
--4
+0
 to None:
--3
+0.5
 to None:
--2
+0
 to None:
--1
+0.5
+to None:
+0
+to None:
+-0.5
+to None:
+0
+to None:
+0.5
+to None:
+0
+to None:
+-0.5
+to None:
+0
+to None:
+0.5
