@@ -35,7 +35,7 @@ import paramath
 import_paramath_time = time.time() - last_time
 main_time = time.time()
 
-PROGRAM_VERSION = "3.0.12"
+PROGRAM_VERSION = "3.1.3"
 
 
 def _supports_color(stream) -> bool:

@@ -1,6 +1,6 @@
 # Paramath Language Reference
 
-### v3.0.12 · A differentiable programming language for continuous computation
+### v3.1.3 · A differentiable programming language for continuous computation
 
 ---
 
@@ -655,12 +655,12 @@ paramath myprogram.pm
 
 ```scheme
 # Hard to read
-return ((x2-x1)**2 + (y2-y1)**2) / (abs(x2-x1) + abs(y2-y1))
+return sqrt((x2-x1)**2 + (y2-y1)**2) / (abs(x2-x1) + abs(y2-y1))
 
 # Clear and maintainable
 dx        = x2 - x1
 dy        = y2 - y1
-euclidean = (dx * dx + dy * dy) ** 0.5
+euclidean = sqrt(dx * dx + dy * dy)
 manhattan = abs(dx) + abs(dy)
 return euclidean / manhattan
 ```
@@ -699,9 +699,9 @@ def layer x w b
     return sigmoid(w * x + b)
 
 def network x
-    h1 = layer(x,   0.5,  0.1)
-    h2 = layer(h1,  0.3, -0.2)
-    return layer(h2, 0.8,  0.0)
+    h1 = layer(x, 0.5, 0.1)
+    h2 = layer(h1, 0.3, -0.2)
+    return layer(h2, 0.8, 0.0)
 ```
 
 ### 6. Comment Your Epsilon Choices
@@ -718,4 +718,4 @@ return if(x > threshold, high_val, low_val)
 
 ---
 
-_Paramath v3.0.12 · MIT License · [github.com/kaemori/paramath3](https://github.com/kaemori/paramath3)_
+_Paramath v3.1.3 · MIT License · [github.com/kaemori/paramath3](https://github.com/kaemori/paramath3)_

@@ -373,7 +373,20 @@ def fix_structure(ast):
 
 
 def tokenize(line):
-    line = _TAB_PATTERN.sub(" __TAB__ ", line)
+    indent_tokens = []
+    i = 0
+    while i < len(line):
+        if line.startswith("\t", i):
+            indent_tokens.append("__TAB__")
+            i += 1
+            continue
+        if line.startswith("    ", i):
+            indent_tokens.append("__TAB__")
+            i += 4
+            continue
+        break
+
+    line = line[i:]
     if _MULTI_OP_PATTERN:
         line = _MULTI_OP_PATTERN.sub(
             lambda m: f" {_OP_TO_PLACEHOLDER[m.group(0)]} ", line
@@ -382,7 +395,9 @@ def tokenize(line):
     for placeholder, op in _MULTI_OP_PLACEHOLDERS.items():
         line = line.replace(placeholder, op)
     line = _SPACES_PATTERN.sub(" ", line)
-    tokens = line.strip().split(" ")
+    stripped = line.strip()
+    tokens = stripped.split(" ") if stripped else []
+    tokens = indent_tokens + tokens
     print_debug(f"tokenize: {len(tokens)} tokens, head={_preview_sequence(tokens)}")
     return tokens
 
