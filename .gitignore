@@ -1,5 +1,5 @@
 .venv
-.gitignore
+.venv/*
 *.log
 __pycache__/
 *.pyc
