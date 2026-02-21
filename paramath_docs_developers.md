@@ -1,159 +1,170 @@
-# Paramath v3 — Documentation
+# Paramath v3 — Developer Documentation
 
-This document describes Paramath v3 (code in this repository). It covers installation, CLI usage, the public programmatic API, key module responsibilities, and short examples.
+This document describes the current code in this repository (v3.1.3).
 
-**Overview**
+## Overview
 
-- Paramath is a small domain-specific compiler for compact mathematical programs.
-- The runtime core lives in the `pm3` package. The CLI entrypoint is `cli.py`.
+- Paramath is a small DSL compiler for compact mathematical programs.
+- The core implementation is currently in a single module: `paramath.py`.
+- The CLI entrypoint is `cli.py`.
 
-**Quick install**
+## Installation
 
-1. Clone the repository or place the source in your PYTHONPATH.
-2. Optional dependencies (for extra features):
-    - `sympy` (for symbolic simplification output),
-    - `tqdm` (for progress bars).
+Required: Python 3.10+ (recommended).
 
-Install optional packages if needed:
+Optional dependencies:
 
-```bash
-pip install sympy tqdm
-```
-
-No packaging is provided here; run tools directly from the repository or install via a simple `pip install -e .` if you create a `setup.py`/`pyproject.toml`.
-
-**CLI — `cli.py`**
-
-Usage examples (also shown in the program epilog):
+- `tqdm` for progress bars (`-p/--progress`)
+- `sympy` for SymPy simplification (`//sympy true`)
 
 ```bash
-# compile a file and write math.txt
-paramath3 testfile.pm
-
-# compile with verbose and debug logs
-paramath3 testfile.pm -dv
-
-# show output and write to compiled.txt
-paramath3 testfile.pm -tmo compiled.txt -O
+pip install tqdm sympy
 ```
 
-Program flags:
+## CLI (`cli.py`)
 
-- `-o, --output FILE` : output file (default: `math.txt`).
-- `-d, --debug` : enable debug logs.
-- `-v, --verbose` : enable verbose logs.
-- `-s, --suppress` : suppress non-error output.
-- `-S, --silent` : suppress all output.
-- `-O, --print-output` : print compiled output to stdout.
-- `-m, --math-output` : format results for calculators (use `^`, implicit multiplication, `ANS`).
-- `-t, --trust` : enable unsafe Python eval sections (`:=`) — use with caution.
-- `-L, --logfile FILE` : path to logfile for verbose/debug output.
-- `-p, --progress` : show parsing progress (requires `tqdm`).
+Examples:
 
-**High-level programmatic API (public)**
+```bash
+python cli.py test.pm3
+python cli.py test.pm3 -dv
+python cli.py test.pm3 -t -m -O -o compiled.txt
+```
 
-The package re-exports the main public functions in `pm3/__init__.py`:
+Arguments and flags:
+
+- positional: `filepath` (input script)
+- `-V, --version` show version and exit
+- `-o, --output FILE` output file (default: `math.txt`)
+- `-d, --debug` enable debug output
+- `-v, --verbose` enable verbose output
+- `-s, --suppress` suppress non-error output
+- `-S, --silent` suppress all output
+- `-O, --print-output` print compiled expressions to stdout
+- `-m, --math-output` math-calculator formatting (`** -> ^`, remove `*`, `ans -> ANS`, `pi -> π`, `e -> ℯ`)
+- `-t, --trust` allow compile-time Python eval via `:=`
+- `-L, --logfile FILE` write debug/verbose logs to a file
+- `-p, --progress` show progress bars (requires `tqdm`)
+- `--no-color` disable ANSI color output
+
+Important runtime behavior:
+
+- Without `-t/--trust`, any script containing `:=` is rejected after listing offending lines.
+- `-p/--progress` cannot be used together with `-d/--debug` or `-v/--verbose`.
+
+## Public Programmatic API (`paramath.py`)
+
+Primary functions:
+
+- `code_to_lines(source)`
+    - Normalizes source text/lines.
+    - Splits semicolon-separated statements.
+    - Preserves parenthesized multiline expressions.
 
 - `parse_pm3_to_ast(code, *, progress: bool = False)`
-    - Input: `code` is an iterable of lines (list of strings). Parses a Paramath source into a list of `Output` entries (ASTs) and a `ProgramConfig`.
-    - Returns: `(asts, config)` where `asts` is a list of outputs with ASTs and `config` is the aggregated configuration.
+    - Parses normalized lines into compiler outputs.
+    - Returns a list of `Output` objects (not a `(asts, config)` tuple).
 
 - `process_asts(asts, *, progress: bool = False)`
-    - Input: `asts` as returned by `parse_pm3_to_ast`.
-    - Performs simplification/dupe extraction/sympy simplification (if enabled) and returns compiled expressions suitable for textual output: a list of `(output_name, expression_string)` tuples.
+    - Takes list of `Output` objects from `parse_pm3_to_ast()`.
+    - Returns list of `(output_name, expression_string)` tuples.
 
 - `check_python_eval(code)`
-    - Scans `code` (iterable of lines) and returns a list of `(line_number, line)` pairs containing `':='` Python-eval lines; useful for trusting checks.
+    - Returns `[(line_number, line_text), ...]` for lines containing `:=`.
 
-- Logging helpers exported: `print_debug`, `print_verbose` (see `pm3/logging.py`).
+Utilities used by CLI and integration code:
 
-**Important modules and responsibilities**
+- `file_to_lines(filename)`
+- `print_debug(message)`
+- `print_verbose(message)`
 
-- `pm3/tokenizer.py`
-    - `tokenize(line: str) -> list[str]`: breaks a source line into tokens and handles indentation markers (tabs).
+Data classes:
 
-- `pm3/ast_gen.py`
-    - `generate_ast(tokens)` : builds nested ASTs from token lists.
-    - `infix_to_postfix(ast)` : converts ASTs with infix operators into explicit operator nodes (postfix-style AST for evaluation/codegen).
+- `ProgramConfig` compiler settings (`precision`, `epsilon`, `variables`, `dupe`, `simplify`, `sympy`, etc.)
+- `Output` parsed output payload (`output`, `ast`, `config`)
+- `FunctionDef`, `AstOutput`
 
-- `pm3/parser.py`
-    - High-level parsing: `parse_expression`, `parse_function`, `parse_repeat` and orchestration in `parse_pm3_to_ast`.
-    - Validates constructs, handles substitution variables and function bodies, and returns structured AST outputs.
+## Compiler Flow (Current Implementation)
 
-- `pm3/compiler.py`
-    - `process_asts(asts, progress=False)`: runs simplification, duplication extraction, sympy simplification (optional), and invokes code generation (`pm3.codegen.generate_expression`) to produce final string expressions.
+1. Load source (`cli.py`) and normalize it with `code_to_lines()`.
+2. Parse with `parse_pm3_to_ast()`:
+    - tokenization (`tokenize`)
+    - AST construction (`generate_ast` + `infix_to_postfix`)
+    - pragma handling (`parse_pragma`)
+    - substitution/function/repeat parsing
+    - output finalization (`_finalize_output_line_ast`)
+3. Process with `process_asts()`:
+    - optional simplification
+    - optional duplicate extraction
+    - expression generation (`generate_expression`)
+    - optional SymPy pass (single/multicore helper)
 
-- `pm3/codegen.py`
-    - `generate_expression(ast)`: convert internal AST back into a readable string with proper parentheses and precedence.
+## Pragmas Supported
 
-- `pm3/simplify.py`
-    - `simplify_ast(ast, config)`: performs literal folding and algebraic identity simplifications when requested by config.
+- `//precision <int>`
+- `//epsilon <float>`
+- `//variables <space-separated names>`
+- `//dupe <true|false> [min_savings:int]`
+- `//simplify <true|false>`
+- `//sympy <true|false>`
 
-- `pm3/utils.py`
-    - Utilities such as `stable_serialize`, `num()`, and `EvalVars` used across the compiler.
+Notes:
 
-**Program flow summary**
+- `precision` and `epsilon` must be set before any `return` statement.
+- `//sympy true` requires `sympy` installed.
 
-1. `cli.py` loads a file (list of lines) and calls `parse_pm3_to_ast(code, progress=...)`.
-2. `parse_pm3_to_ast` tokenizes lines (`tokenize`), builds ASTs (`generate_ast`), converts infix to operator ASTs (`infix_to_postfix`), expands macros/functions, validates and collects outputs.
-3. `process_asts` then simplifies, deduplicates subexpressions (if enabled), optionally runs SymPy simplifier, and uses `generate_expression` to produce final textual expressions.
-
-**Using Paramath programmatically**
-
-Minimal example (from Python):
+## Programmatic Example
 
 ```python
-from pm3 import parse_pm3_to_ast, process_asts
+from paramath import code_to_lines, parse_pm3_to_ast, process_asts, check_python_eval
 
-code = [
-    "//precision 6",
-    "x = 2",
-    "return x + 3",
-]
-
-asts, config = parse_pm3_to_ast(code)
-outputs = process_asts(asts)
-for output_name, expr in outputs:
-    print(f"to {output_name}: {expr}")
-```
-
-If you have `:=`-style Python eval in your source, run `check_python_eval(code)` first and enforce a trust policy before allowing execution.
-
-**Examples**
-
-Given `example.pm`:
-
-```
+source = """
 //precision 6
-a = 2
-return a * 3 + 1
+//epsilon 1e-9
+//variables x y z
+x = 2
+return x + 3
+"""
+
+code = code_to_lines(source)
+unsafe_lines = check_python_eval(code)
+if unsafe_lines:
+    raise RuntimeError("Untrusted source contains := lines")
+
+asts = parse_pm3_to_ast(code)
+outputs = process_asts(asts)
+
+for output_name, expr in outputs:
+    print(f"to {output_name}:")
+    print(expr)
 ```
 
-Running via CLI:
+## Repository Layout (Current)
+
+- `cli.py` CLI entrypoint
+- `paramath.py` core parser/compiler/simplifier/codegen and public API
+- `colors.py` ANSI color helpers for CLI output
+- `paramath_syntax_guide.md` language reference
+- `paramath_docs_developers.md` this file
+
+## Validation / Quick Checks
+
+- CLI smoke test:
 
 ```bash
-python cli.py example.pm -O
+python cli.py test.pm3 -O
 ```
 
-Programmatic usage returns the compiled expression string via `process_asts`.
+- Progress mode check:
 
-**Developer guide — repository layout**
+```bash
+python cli.py test.pm3 -p
+```
 
-- `cli.py` : CLI entrypoint and argument parsing.
-- `pm3/` : core package. Key files:
-    - `tokenizer.py`, `ast_gen.py`, `parser.py`, `compiler.py`, `codegen.py`, `simplify.py`, `utils.py`, `logging.py` etc.
-- `colors.py` : CLI color helpers.
-- `paramath_docs_v3.md` : this document.
+- SymPy check:
 
-When extending:
+```bash
+python cli.py test.pm3 -O
+```
 
-- Add parsing helpers to `tokenizer.py` / `ast_gen.py` if changing syntax.
-- Keep high-level logic (validation, function/loop handling) in `parser.py`.
-- Add transformation/simplification logic to `simplify.py` or new transform modules.
-- Update `process_asts` in `compiler.py` to include new codegen/simplify steps.
-
-**Testing and quick checks**
-
-- There are no formal tests included. To validate, create small `.pm` source files and run `python cli.py path/to/file.pm`.
-- For progress bars, install `tqdm` and run with `-p`.
-- For SymPy-based simplification, install `sympy` and set `sympy` flags in your program config (via `//` pragmas).
+with `//sympy true` in the input script.
