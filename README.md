@@ -13,7 +13,6 @@ All this, powered by Python.
 - **Automatic optimization**: Simplification and duplicate subexpression extraction
 - **Loop unrolling**: Compile-time iteration for performance
 - **Flexible output**: Display and/or write compiled expressions to files
-- **Trust-aware execution**: Compile-time Python eval (`:=`) can be blocked unless trusted
 
 ## Documentation
 
