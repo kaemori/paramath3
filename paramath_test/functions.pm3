@@ -1,0 +1,31 @@
+//precision 5
+//epsilon 1e-99
+//simplify true
+//dupe false
+
+def square u1
+    return u1 * 2
+
+def add3 u2 u3 u4
+    return u2 + u3 + u4
+
+def nested u5
+    return square(u5 + 1)
+
+out a
+return square(7)
+
+out b
+return nested(4)
+
+out c
+return add3(1, 2, 3)
+
+def combo u6 u7
+    return square(u6) + square(u7)
+
+out d
+return combo(3, 4)
+
+out e
+return add3(square(2), square(3), square(4))

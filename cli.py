@@ -22,7 +22,7 @@ from colors import colors
 
 import_colors_time = time.time() - last_time
 last_time = time.time()
-from paramath import (
+from paramath3 import (
     code_to_lines,
     parse_pm3_to_ast,
     process_asts,
@@ -30,7 +30,7 @@ from paramath import (
     print_debug,
     print_verbose,
 )
-import paramath
+import paramath3
 
 import_paramath_time = time.time() - last_time
 main_time = time.time()
@@ -206,15 +206,15 @@ examples:
         raise ValueError("Progress bar cannot be used with verbose or debug modes")
 
     if verbose:
-        paramath.VERBOSE = True
+        paramath3.VERBOSE = True
         print_verbose("verbose logging enabled")
 
     if debug:
-        paramath.DEBUG = True
+        paramath3.DEBUG = True
         print_debug("debug logging enabled")
 
     if logfile:
-        paramath.LOGFILE = logfile
+        paramath3.LOGFILE = logfile
         print_verbose(f'Logging to file: "{logfile}"')
         with open(logfile, "w") as f:
             f.write(
@@ -244,7 +244,7 @@ examples:
     print_debug(f"Import argparse time: {import_argparse_time*1000:.6f}ms")
     print_debug(f"Import sys time: {import_sys_time*1000:.6f}ms")
     print_debug(f"Import colors time: {import_colors_time*1000:.6f}ms")
-    print_debug(f"Import paramath time: {import_paramath_time*1000:.6f}ms")
+    print_debug(f"Import paramath3 time: {import_paramath_time*1000:.6f}ms")
     print_debug(f"Init finished: {(time.time() - time_start)*1000:.6f}ms")
 
     try:
@@ -320,11 +320,12 @@ examples:
             builtins.print = old_print
         print(_err("=== Compilation failed! ==="))
         print(_err("Error:") + " " + str(e))
-        print(
-            _dim(
-                f"If this is an error in the compiler,\n{"".join(traceback.format_exception(e)[1:])}."
+        if debug:
+            print(
+                _dim(
+                    f"If this is an error in the compiler,\n{"".join(traceback.format_exception(e)[1:])}."
+                )
             )
-        )
 
 
 if __name__ == "__main__":

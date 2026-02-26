@@ -1,0 +1,25 @@
+//precision 0
+//epsilon 1e-99
+//simplify true
+//dupe false
+//variables TESTNUM CHECKSUM A B C D E F X Y Z M
+
+const_A := 123456
+len_A := len(str(123456))
+
+out TESTNUM
+return const_A
+
+out CHECKSUM
+return 0
+
+repeat len_A i
+    div_len := 10 ** (6 - int(vars.i) - 1)
+    target = floor(TESTNUM / div_len)
+    test_var := int(str(123456)[int(vars.i) + 1:] or 0)
+    difference = target - test_var
+    out CHECKSUM
+    return CHECKSUM + difference
+
+out A
+return len_A - CHECKSUM

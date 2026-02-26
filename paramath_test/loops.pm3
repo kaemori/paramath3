@@ -1,0 +1,34 @@
+//precision 5
+//epsilon 1e-99
+//simplify true
+//dupe false
+
+base = 10
+
+repeat 3 i
+    repeat 2 j
+        out a
+        return (i * 10) + j
+
+repeat 5 n
+    squared = n ** 2
+    cubed = n ** 3
+    out b
+    return cubed + (squared / 2)
+
+repeat 10 k
+    is_even = (mod(k, 2) + 1) / 2
+    out c
+    return k * is_even
+
+repeat base i
+    scaled = i * base
+    out d
+    return scaled / 2
+
+repeat 2 i
+    outer_val = i * 100
+    repeat 3 j
+        repeat 2 k
+            out f
+            return outer_val + (j * 10) + k

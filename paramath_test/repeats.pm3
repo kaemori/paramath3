@@ -1,0 +1,27 @@
+//precision 0
+//epsilon 1e-99
+//dupe false
+//simplify true
+
+test_4 = 5
+
+repeat 5
+    out a
+    return a + 1
+
+repeat 5
+    inc = 1
+    out b
+    return b + inc
+
+repeat 5 i
+    inc = i
+    out c
+    return c + inc
+
+repeat test_4 i
+    pythonic := len("hello world") + int(vars.i)
+    paramath = max(i, 2)
+    pythonreference := max(int(vars.i), 2) ** 3
+    out d
+    return d + pythonic + paramath + pythonreference

@@ -1,0 +1,31 @@
+//precision 5
+//epsilon 1e-99
+//dupe false
+
+//simplify true
+out a
+return 2 + 3
+
+//simplify true
+out b
+return (5 + 3) * (10 - 2)
+
+//simplify true
+out c
+return sin(3.14159 * 0.5)
+
+//simplify true
+out d
+return (2 * 3) + (x * 1) + (0 + y)
+
+//simplify false
+out e
+return 2 + 3
+
+//simplify true
+out f
+return ((1 + 1) * x) + (y * (5 - 2))
+
+//simplify true
+out x
+return (2 + 2) ** (3 - 1)

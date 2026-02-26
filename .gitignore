@@ -8,3 +8,6 @@ __pycache__/
 *.env
 *.txt
 *.prof
+
+_for_ref
+_for_ref/*

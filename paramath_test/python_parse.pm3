@@ -1,0 +1,14 @@
+//precision 3
+//epsilon 1e-99
+//simplify true
+//dupe false
+
+length := len("silly")
+area := 6 ** 2
+
+repeat 5 i
+    one_third := 1/3
+    cube := 36 * int(vars.i)
+    pyramid := 36 * int(vars.i) * (1/3)
+    out a
+    return pyramid

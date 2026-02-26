@@ -1,0 +1,28 @@
+//precision 5
+//epsilon 1e-99
+//simplify true
+//dupe true -10
+
+out a
+return ((a + b) * (a + b)) + ((a + b) * (a + b))
+
+out b
+return (sin(x + 1) * cos(x + 1)) + (sin(x + 1) / cos(x + 1))
+
+out c
+return (((a * b) + (c * d)) * ((a * b) + (c * d))) + (((a * b) + (c * d)) - ((a * b) + (c * d)))
+
+out d
+return ((x + y) + (x + y)) + ((x + y) * ((x + y) + (x + y)))
+
+//dupe true 5
+out e
+return (a * b * c * d * e * f) + (a * b * c * d * e * f)
+
+//dupe true 20
+out f
+return (a * b) + (a * b)
+
+//dupe true -10
+out x
+return ((sin(x) + cos(y)) * (sin(x) + cos(y))) + ((sin(x) + cos(y)) * (sin(x) + cos(y))) + ((sin(x) + cos(y)) * (sin(x) + cos(y)))

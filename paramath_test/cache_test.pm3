@@ -1,0 +1,19 @@
+//precision 5
+//epsilon 1e-99
+//simplify true
+//dupe true
+
+out a
+return (sin(x + y) * cos(x - y)) + (tan(x * y) / (abs(x) + abs(y)))
+
+out b
+return (sin(x + y) * cos(x - y)) + (tan(x * y) / (abs(x) + abs(y)))
+
+out c
+return (sin(x + y) * cos(x - y)) + (tan(x * y) / (abs(x) + abs(y)))
+
+out d
+return (x ** 3 + 3 * x ** 2 * y + 3 * x * y ** 2 + y ** 3) / (x + y)
+
+out e
+return (x ** 3 + 3 * x ** 2 * y + 3 * x * y ** 2 + y ** 3) / (x + y)

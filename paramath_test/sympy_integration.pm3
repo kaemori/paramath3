@@ -1,0 +1,28 @@
+//precision 5
+//epsilon 1e-99
+//simplify true
+//dupe false
+
+//sympy true
+out a
+return (x * y) + (y * x)
+
+//sympy true
+out b
+return (sin(x) ** 2) + (cos(x) ** 2)
+
+//sympy true
+out c
+return (x + 1) * (x - 1)
+
+//sympy true
+out d
+return (x * y * z) / (x * z)
+
+//sympy false
+out e
+return (x * y) + (y * x)
+
+//sympy true
+out f
+return (x * x + 2 * x + 1) / (x + 1)

@@ -1,0 +1,34 @@
+//precision 5
+//epsilon 1e-99
+//simplify true
+//dupe false
+
+out a
+return x * 1
+
+out b
+return (a * b) * 0
+
+out c
+return x + 0
+
+out d
+return x - 0
+
+out e
+return (a * b) - (a * b)
+
+out f
+return (a + b) / (a + b)
+
+out x
+return x ** 1
+
+out y
+return (a + b + c) ** 0
+
+out z
+return sin(x) * sin(x)
+
+out m
+return cos(y) + cos(y)

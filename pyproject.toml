@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paramath3"
+version = "3.1.3"
+description = "Paramath v3 compiler"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Paramath contributors" }
+]
+keywords = ["dsl", "math", "compiler", "paramath"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/kaemori/paramath3"
+Repository = "https://github.com/kaemori/paramath3"
+
+[project.optional-dependencies]
+full = ["tqdm>=4.66", "sympy>=1.12"]
+
+[project.scripts]
+paramath3 = "cli:main"
+
+[tool.setuptools]
+py-modules = ["cli", "paramath3", "colors"]

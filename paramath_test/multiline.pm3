@@ -1,0 +1,37 @@
+//precision 0
+//epsilon 1e-99
+//simplify true
+//dupe false
+//variables A B a b c d e f x y z m
+
+out a
+return A + 6
+
+out b
+return (
+    A
+    +
+    6
+)
+
+out c
+return (
+    A
+    +
+    (
+        6
+        -
+        B
+    )
+)
+
+out d
+return (
+    A
+    +
+    (
+        6
+        -
+        B
+    )
+)

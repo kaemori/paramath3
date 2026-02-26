@@ -1,0 +1,20 @@
+//precision 5
+//epsilon 1e-99
+//simplify true
+//dupe false
+//variables a b c d e f g h i j x y z m
+
+out a
+return (((((a + b) + c) + d) + e) + f)
+
+out b
+return (a * b) + (c / d) + (e - f) + (g ** 2)
+
+out c
+return a / (abs(a) + epsilon)
+
+out d
+return a + (b + (c + (d + (e + (f + (g + (h + (i + j))))))))
+
+out e
+return sin(cos(tan(x))) + (abs(y) * arcsin(z))

@@ -1,0 +1,40 @@
+//precision 5
+//epsilon 1e-99
+//simplify true
+//dupe false
+
+out a
+return a == b
+
+out b
+return a > b
+
+out c
+return a <= b
+
+out d
+return !(a > b)
+
+out e
+return if(a > b, a, b)
+
+out f
+return max(a, b)
+
+out x
+return min(x + 1, y - 2)
+
+out y
+return sign(a - b)
+
+out z
+return mod(a, 10)
+
+out m
+return frac(x)
+
+out a
+return floor(x + 0.5)
+
+out b
+return if(a > 0, if(b > 0, 1, 2), 3)

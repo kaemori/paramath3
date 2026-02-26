@@ -1,0 +1,21 @@
+//precision 5
+//epsilon 1e-99
+//simplify true
+//dupe false
+//variables p q r s t a b c d e f x y z m
+
+alpha = p
+beta = q
+gamma = r
+
+out a
+return alpha + beta
+
+out b
+return gamma * (s + t)
+
+out c
+return (alpha + beta) / (gamma - alpha)
+
+out d
+return (alpha * beta) + (gamma / alpha)
