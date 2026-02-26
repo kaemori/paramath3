@@ -16,8 +16,8 @@ All this, powered by Python.
 
 ## Documentation
 
-- Language reference: [github.com/kaemori/paramath3/docs/paramath_syntax_guide.md](paramath_syntax_guide.md)
-- Developer docs: [github.com/kaemori/paramath3/docs/paramath_docs_developers.md](paramath_docs_developers.md)
+- Language reference: [paramath_syntax_guide.md](github.com/kaemori/paramath3/docs/paramath_syntax_guide.md)
+- Developer docs: [paramath_docs_developers.md](github.com/kaemori/paramath3/docs/paramath_docs_developers.md)
 
 ## Installation
 
