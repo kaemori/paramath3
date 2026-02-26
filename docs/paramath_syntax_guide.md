@@ -1,6 +1,6 @@
 # Paramath Language Reference
 
-### v3.2.4 · A differentiable programming language for continuous computation
+### v3.2.5 · A differentiable programming language for continuous computation
 
 ---
 
@@ -718,4 +718,4 @@ return if(x > threshold, high_val, low_val)
 
 ---
 
-_Paramath v3.2.4 · MIT License · [github.com/kaemori/paramath3](https://github.com/kaemori/paramath3)_
+_Paramath v3.2.5 · MIT License · [github.com/kaemori/paramath3](https://github.com/kaemori/paramath3)_
