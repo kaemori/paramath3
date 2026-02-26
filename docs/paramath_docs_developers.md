@@ -1,6 +1,6 @@
 # Paramath v3 — Developer Documentation
 
-This document describes the current code in this repository (v3.2.3).
+This document describes the current code in this repository (v3.2.4).
 
 ## Overview
 
