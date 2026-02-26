@@ -57,8 +57,8 @@ pipx install paramath3
 Clone the repository:
 
 ```bash
-git clone https://github.com/kaemori/paramath.git
-cd paramath
+git clone https://github.com/kaemori/paramath3.git
+cd paramath3
 ```
 
 Run directly from source:
@@ -122,8 +122,4 @@ The fixture set in `paramath_test/` is a file-for-file (`1:1`) conversion of `_f
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
-
-TODO:
-add pypi installation instructions once published
-add unit tests and example scripts
+This project is licensed under the [MIT License](https://github.com/kaemori/paramath3/blob/main/LICENSE).
