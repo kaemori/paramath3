@@ -1,0 +1,12 @@
+LICENSE
+README.md
+cli.py
+colors.py
+paramath3.py
+pyproject.toml
+paramath3.egg-info/PKG-INFO
+paramath3.egg-info/SOURCES.txt
+paramath3.egg-info/dependency_links.txt
+paramath3.egg-info/entry_points.txt
+paramath3.egg-info/requires.txt
+paramath3.egg-info/top_level.txt

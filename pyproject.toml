@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [
-  { name = "Paramath contributors" }
+  { name = "Kaemori Yozzan" }
 ]
 keywords = ["dsl", "math", "compiler", "paramath"]
 classifiers = [

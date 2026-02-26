@@ -1,0 +1,2 @@
+[console_scripts]
+paramath3 = cli:main
