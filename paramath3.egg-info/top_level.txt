@@ -1,3 +1,0 @@
-cli
-colors
-paramath3

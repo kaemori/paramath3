@@ -10,3 +10,7 @@ __pycache__/
 
 _for_ref
 _for_ref/*
+
+build/
+dist/
+*.egg-info/

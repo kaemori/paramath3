@@ -115,7 +115,7 @@ Test layout:
 Run the Paramath v3 suite:
 
 ```bash
-python -m unittest tests/test_reference_pm_suite.py -v
+python -m unittest tests/pm_test_suite.py -v
 ```
 
 The fixture set in `paramath_test/` is a file-for-file (`1:1`) conversion of `_for_ref/paramath/paramath_tests` into Paramath v3 syntax, including `examples/number_test`.
