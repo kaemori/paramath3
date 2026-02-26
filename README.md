@@ -130,8 +130,6 @@ Run the Paramath v3 suite:
 python -m unittest tests/pm_test_suite.py -v
 ```
 
-The fixture set in `paramath_test/` is a file-for-file (`1:1`) conversion of `_for_ref/paramath/paramath_tests` into Paramath v3 syntax, including `examples/number_test`.
-
 ## License
 
 This project is licensed under the [MIT License](https://github.com/kaemori/paramath3/blob/main/LICENSE).
