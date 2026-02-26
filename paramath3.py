@@ -2006,7 +2006,8 @@ def _apply_line_transforms(
             import sympy  # noqa: F401
         except ImportError:
             raise ImportError(
-                "SymPy is required for sympy output. Please install it via 'pip install sympy'."
+                """SymPy is required for sympy output. Please install it via 'pip install sympy' if using pip.
+If using pipx, install sympy using 'pipx inject paramath3 sympy', or reinstall with: pipx install 'paramath3[full]'"""
             ) from None
 
         expr_str = generate_expression(expr)

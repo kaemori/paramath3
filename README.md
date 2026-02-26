@@ -49,7 +49,19 @@ pipx ensurepath
 Restart your shell, then install Paramath:
 
 ```bash
+pipx install paramath3[full]
+```
+
+To install without optional dependencies:
+
+```bash
 pipx install paramath3
+```
+
+To add optional dependencies to an existing pipx installation:
+
+```bash
+pipx inject paramath3 sympy tqdm
 ```
 
 ### Method 2 (Direct Git Clone)
