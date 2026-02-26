@@ -144,8 +144,8 @@ for output_name, expr in outputs:
 - `cli.py` CLI entrypoint
 - `paramath.py` core parser/compiler/simplifier/codegen and public API
 - `colors.py` ANSI color helpers for CLI output
-- `paramath_syntax_guide.md` language reference
-- `paramath_docs_developers.md` this file
+- `github.com/kaemori/paramath3/docs/paramath_syntax_guide.md` language reference
+- `github.com/kaemori/paramath3/docs/paramath_docs_developers.md` this file
 
 ## Validation / Quick Checks
 
