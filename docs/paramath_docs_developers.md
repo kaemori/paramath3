@@ -5,7 +5,7 @@ This document describes the current code in this repository (v3.2.5).
 ## Overview
 
 - Paramath is a small DSL compiler for compact mathematical programs.
-- The core implementation is currently in a single module: `paramath.py`.
+- The core implementation is currently in a single module: `paramath3.py`.
 - The CLI entrypoint is `cli.py`.
 
 ## Installation
@@ -116,7 +116,7 @@ Notes:
 ## Programmatic Example
 
 ```python
-from paramath import code_to_lines, parse_pm3_to_ast, process_asts, check_python_eval
+from paramath3 import code_to_lines, parse_pm3_to_ast, process_asts, check_python_eval
 
 source = """
 //precision 6
@@ -142,7 +142,7 @@ for output_name, expr in outputs:
 ## Repository Layout (Current)
 
 - `cli.py` CLI entrypoint
-- `paramath.py` core parser/compiler/simplifier/codegen and public API
+- `paramath3.py` core parser/compiler/simplifier/codegen and public API
 - `colors.py` ANSI color helpers for CLI output
 - `github.com/kaemori/paramath3/docs/paramath_syntax_guide.md` language reference
 - `github.com/kaemori/paramath3/docs/paramath_docs_developers.md` this file
